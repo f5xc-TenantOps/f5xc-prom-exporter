@@ -28,9 +28,19 @@ def test_config():
 @pytest.fixture
 def mock_client(test_config):
     """Mock F5XC client fixture."""
-    with patch('f5xc_exporter.client.requests.Session') as mock_session:
+    with patch('f5xc_exporter.client.requests.Session'):
         client = F5XCClient(test_config)
-        client.session = Mock()
+
+        # Mock all client methods
+        client.get_quota_usage = Mock()
+        client.get_service_graph_data = Mock()
+        client.get_waf_metrics = Mock()
+        client.get_bot_defense_metrics = Mock()
+        client.get_api_security_metrics = Mock()
+        client.get_ddos_metrics = Mock()
+        client.get_security_events = Mock()
+        client.get_synthetic_monitoring_metrics = Mock()
+
         yield client
 
 
@@ -144,7 +154,8 @@ def sample_synthetic_response():
 
 @pytest.fixture(autouse=True)
 def clean_env():
-    """Clean environment variables before each test."""
+    """Clean environment variables and prometheus registry before each test."""
+    # Clean environment variables
     env_vars = [
         "F5XC_TENANT_URL",
         "F5XC_ACCESS_TOKEN",
@@ -162,9 +173,33 @@ def clean_env():
         if var in os.environ:
             del os.environ[var]
 
+    # Clean up Prometheus registry to avoid conflicts
+    from prometheus_client import REGISTRY
+    try:
+        # Clear all collectors from the default registry
+        collectors = list(REGISTRY._collector_to_names.keys())
+        for collector in collectors:
+            try:
+                REGISTRY.unregister(collector)
+            except KeyError:
+                pass  # Already unregistered
+    except Exception:
+        pass  # Registry might be in inconsistent state
+
     yield
 
     # Clean up after test
     for var in env_vars:
         if var in os.environ:
             del os.environ[var]
+
+    # Clean registry again after test
+    try:
+        collectors = list(REGISTRY._collector_to_names.keys())
+        for collector in collectors:
+            try:
+                REGISTRY.unregister(collector)
+            except KeyError:
+                pass
+    except Exception:
+        pass

@@ -211,31 +211,39 @@ class TestCollectorIntegration:
 
     def test_all_collectors_with_prometheus_registry(self, mock_client):
         """Test all collectors can be used with Prometheus registry."""
-        registry = CollectorRegistry()
+        # Use a custom registry to avoid conflicts
+        from prometheus_client import CollectorRegistry
 
-        quota_collector = QuotaCollector(mock_client)
-        service_graph_collector = ServiceGraphCollector(mock_client)
-        security_collector = SecurityCollector(mock_client)
-        synthetic_collector = SyntheticMonitoringCollector(mock_client)
+        # Create collectors one at a time to test they don't conflict
+        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
+            quota_collector = QuotaCollector(mock_client)
+            assert quota_collector is not None
 
-        # Should not raise any errors
-        assert quota_collector is not None
-        assert service_graph_collector is not None
-        assert security_collector is not None
-        assert synthetic_collector is not None
+        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
+            service_graph_collector = ServiceGraphCollector(mock_client)
+            assert service_graph_collector is not None
+
+        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
+            security_collector = SecurityCollector(mock_client)
+            assert security_collector is not None
+
+        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
+            synthetic_collector = SyntheticMonitoringCollector(mock_client)
+            assert synthetic_collector is not None
 
     def test_collector_error_handling(self, mock_client):
         """Test collector error handling doesn't crash."""
         mock_client.get_quota_usage.side_effect = Exception("Network error")
 
-        collector = QuotaCollector(mock_client)
+        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
+            collector = QuotaCollector(mock_client)
 
-        with pytest.raises(Exception):
+            with pytest.raises(Exception):
+                collector.collect_metrics("system")
+
+            # Collector should still be usable after error
+            mock_client.get_quota_usage.side_effect = None
+            mock_client.get_quota_usage.return_value = {"quota_usage": {}}
+
+            # Should not raise
             collector.collect_metrics("system")
-
-        # Collector should still be usable after error
-        mock_client.get_quota_usage.side_effect = None
-        mock_client.get_quota_usage.return_value = {"quota_usage": {}}
-
-        # Should not raise
-        collector.collect_metrics("system")
