@@ -7,7 +7,7 @@ name = "f5xc-prom-exporter"
 version = "0.1.0"
 description = "Prometheus exporter for F5 Distributed Cloud metrics"
 readme = "README.md"
-license = {text = "Unlicense"}
+license = "Unlicense"
 authors = [
     {name = "tenantOps", email = "tenantOps@f5demos.com"}
 ]
@@ -17,9 +17,6 @@ classifiers = [
     "Topic :: System :: Monitoring",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
 ]
 requires-python = ">=3.9"
 dependencies = [
