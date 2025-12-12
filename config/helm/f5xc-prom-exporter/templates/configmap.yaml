@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "f5xc-prom-exporter.fullname" . }}-config
+  labels:
+    {{- include "f5xc-prom-exporter.labels" . | nindent 4 }}
+data:
+  F5XC_EXP_HTTP_PORT: {{ .Values.f5xc.server.port | quote }}
+  F5XC_EXP_LOG_LEVEL: {{ .Values.f5xc.server.logLevel | quote }}
+  F5XC_QUOTA_INTERVAL: {{ .Values.f5xc.intervals.quota | quote }}
+  F5XC_HTTP_LB_INTERVAL: {{ .Values.f5xc.intervals.httpLb | quote }}
+  F5XC_TCP_LB_INTERVAL: {{ .Values.f5xc.intervals.tcpLb | quote }}
+  F5XC_UDP_LB_INTERVAL: {{ .Values.f5xc.intervals.udpLb | quote }}
+  F5XC_SECURITY_INTERVAL: {{ .Values.f5xc.intervals.security | quote }}
+  F5XC_BOT_DEFENSE_INTERVAL: {{ .Values.f5xc.intervals.botDefense | quote }}
+  F5XC_SYNTHETIC_INTERVAL: {{ .Values.f5xc.intervals.synthetic | quote }}
+  F5XC_MAX_CONCURRENT_REQUESTS: {{ .Values.f5xc.rateLimit.maxConcurrentRequests | quote }}
+  F5XC_REQUEST_TIMEOUT: {{ .Values.f5xc.rateLimit.requestTimeout | quote }}
+  F5XC_RETRY_MAX_ATTEMPTS: {{ .Values.f5xc.rateLimit.retryMaxAttempts | quote }}

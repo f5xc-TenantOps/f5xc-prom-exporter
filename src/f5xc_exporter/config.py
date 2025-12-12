@@ -1,0 +1,58 @@
+"""Configuration management for F5XC Prometheus Exporter."""
+
+import os
+from typing import Optional
+
+from pydantic import Field, HttpUrl, ConfigDict
+from pydantic_settings import BaseSettings
+
+
+class Config(BaseSettings):
+    """Configuration for F5XC Prometheus Exporter."""
+
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+
+    # Required F5XC settings
+    f5xc_tenant_url: HttpUrl = Field(..., alias="F5XC_TENANT_URL")
+    f5xc_access_token: str = Field(..., alias="F5XC_ACCESS_TOKEN")
+
+    # HTTP server settings
+    f5xc_exp_http_port: int = Field(default=8080, alias="F5XC_EXP_HTTP_PORT")
+    f5xc_exp_log_level: str = Field(default="INFO", alias="F5XC_EXP_LOG_LEVEL")
+
+    # Collection intervals (seconds)
+    f5xc_quota_interval: int = Field(default=600, alias="F5XC_QUOTA_INTERVAL")
+    f5xc_cdn_interval: int = Field(default=120, alias="F5XC_CDN_INTERVAL")
+    f5xc_http_lb_interval: int = Field(default=120, alias="F5XC_HTTP_LB_INTERVAL")
+    f5xc_tcp_lb_interval: int = Field(default=120, alias="F5XC_TCP_LB_INTERVAL")
+    f5xc_udp_lb_interval: int = Field(default=120, alias="F5XC_UDP_LB_INTERVAL")
+    f5xc_dns_health_interval: int = Field(default=60, alias="F5XC_DNS_HEALTH_INTERVAL")
+    f5xc_security_interval: int = Field(default=180, alias="F5XC_SECURITY_INTERVAL")
+    f5xc_bot_defense_interval: int = Field(default=300, alias="F5XC_BOT_DEFENSE_INTERVAL")
+    f5xc_synthetic_interval: int = Field(default=120, alias="F5XC_SYNTHETIC_INTERVAL")
+
+    # Rate limiting
+    f5xc_max_concurrent_requests: int = Field(default=5, alias="F5XC_MAX_CONCURRENT_REQUESTS")
+    f5xc_request_timeout: int = Field(default=30, alias="F5XC_REQUEST_TIMEOUT")
+    f5xc_retry_max_attempts: int = Field(default=3, alias="F5XC_RETRY_MAX_ATTEMPTS")
+
+    @property
+    def tenant_url_str(self) -> str:
+        """Get tenant URL as string without trailing slash."""
+        return str(self.f5xc_tenant_url).rstrip('/')
+
+    @property
+    def tenant_name(self) -> str:
+        """Extract tenant name from tenant URL."""
+        # Extract tenant name from URL like https://f5-sales-demo.console.ves.volterra.io
+        hostname = str(self.f5xc_tenant_url).split("//")[1]
+        return hostname.split(".")[0]
+
+
+def get_config() -> Config:
+    """Get configuration instance."""
+    return Config()

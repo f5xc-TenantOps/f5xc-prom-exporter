@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: f5xc-exporter-config
+  namespace: f5xc-monitoring
+  labels:
+    app.kubernetes.io/name: f5xc-prom-exporter
+    app.kubernetes.io/component: config
+data:
+  # HTTP server settings
+  F5XC_EXP_HTTP_PORT: "8080"
+  F5XC_EXP_LOG_LEVEL: "INFO"
+
+  # Collection intervals (seconds) - adjust based on your needs
+  # Quota metrics (less frequent, changes slowly)
+  F5XC_QUOTA_INTERVAL: "600"        # 10 minutes
+
+  # Load balancer metrics (more frequent for real-time monitoring)
+  F5XC_HTTP_LB_INTERVAL: "120"      # 2 minutes
+  F5XC_TCP_LB_INTERVAL: "120"       # 2 minutes
+  F5XC_UDP_LB_INTERVAL: "120"       # 2 minutes
+
+  # Security metrics
+  F5XC_SECURITY_INTERVAL: "180"     # 3 minutes
+  F5XC_BOT_DEFENSE_INTERVAL: "300"  # 5 minutes
+
+  # Synthetic monitoring
+  F5XC_SYNTHETIC_INTERVAL: "120"    # 2 minutes
+
+  # Rate limiting settings
+  F5XC_MAX_CONCURRENT_REQUESTS: "5"
+  F5XC_REQUEST_TIMEOUT: "30"
+  F5XC_RETRY_MAX_ATTEMPTS: "3"

@@ -1,0 +1,25 @@
+# ServiceMonitor for Prometheus Operator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: f5xc-prom-exporter
+  namespace: f5xc-monitoring
+  labels:
+    app.kubernetes.io/name: f5xc-prom-exporter
+    app.kubernetes.io/component: monitoring
+    # Add this label if your Prometheus operator uses it for discovery
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: f5xc-prom-exporter
+      app.kubernetes.io/component: service
+  endpoints:
+  - port: http-metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+  namespaceSelector:
+    matchNames:
+    - f5xc-monitoring

@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: f5xc-prom-exporter
+
+namespace: f5xc-monitoring
+
+resources:
+- namespace.yaml
+- rbac.yaml
+- secret.yaml
+- configmap.yaml
+- deployment.yaml
+- service.yaml
+- servicemonitor.yaml
+
+commonLabels:
+  app.kubernetes.io/name: f5xc-prom-exporter
+  app.kubernetes.io/instance: default
+
+images:
+- name: ghcr.io/tenantops/f5xc-prom-exporter
+  newTag: latest
+
+# Uncomment to customize resource names
+#namePrefix: my-
+#nameSuffix: -prod
+
+# Uncomment to add additional labels to all resources
+#commonLabels:
+#  environment: production
+#  team: platform
+
+# Uncomment to add annotations to all resources
+#commonAnnotations:
+#  managed-by: kustomize

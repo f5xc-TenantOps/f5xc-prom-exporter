@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  f5xc-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # Required F5XC configuration
+      - F5XC_TENANT_URL=${F5XC_TENANT_URL}
+      - F5XC_ACCESS_TOKEN=${F5XC_ACCESS_TOKEN}
+
+      # Optional configuration with defaults
+      - F5XC_EXP_HTTP_PORT=8080
+      - F5XC_EXP_LOG_LEVEL=INFO
+
+      # Collection intervals (seconds)
+      - F5XC_QUOTA_INTERVAL=600
+      - F5XC_HTTP_LB_INTERVAL=120
+      - F5XC_TCP_LB_INTERVAL=120
+      - F5XC_UDP_LB_INTERVAL=120
+      - F5XC_SECURITY_INTERVAL=180
+      - F5XC_SYNTHETIC_INTERVAL=120
+
+      # Rate limiting
+      - F5XC_MAX_CONCURRENT_REQUESTS=5
+      - F5XC_REQUEST_TIMEOUT=30
+      - F5XC_RETRY_MAX_ATTEMPTS=3
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    restart: unless-stopped

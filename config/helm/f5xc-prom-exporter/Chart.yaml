@@ -1,0 +1,18 @@
+apiVersion: v2
+name: f5xc-prom-exporter
+description: A Helm chart for F5 Distributed Cloud Prometheus Exporter
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/tenantOps/f5xc-prom-exporter
+sources:
+- https://github.com/tenantOps/f5xc-prom-exporter
+maintainers:
+- name: tenantOps
+  email: tenantOps@f5demos.com
+keywords:
+- f5
+- distributed-cloud
+- prometheus
+- monitoring
+- exporter
