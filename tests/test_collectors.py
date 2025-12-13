@@ -101,17 +101,23 @@ class TestServiceGraphCollector:
         assert success_metric._value._value == 1
 
     def test_http_stats_processing(self, mock_client, sample_service_graph_response):
-        """Test HTTP statistics processing."""
+        """Test HTTP statistics processing with actual F5XC API structure."""
         mock_client.get_service_graph_data.return_value = sample_service_graph_response
 
         collector = ServiceGraphCollector(mock_client)
         collector.collect_metrics("system")
 
-        # Check HTTP request metrics
-        requests_2xx = collector.http_requests_total.labels(
-            namespace="system", load_balancer="test-lb", backend="frontend", response_class="2xx"
+        # Check HTTP request metrics - now using downstream/upstream with metric types
+        requests_downstream = collector.http_requests_total.labels(
+            namespace="system", load_balancer="test-lb", backend="downstream", response_class="total"
         )
-        assert requests_2xx._value._value == 1000.0
+        assert requests_downstream._value._value == 100.5
+
+        # Check HTTP response latency
+        latency = collector.http_request_duration.labels(
+            namespace="system", load_balancer="test-lb", backend="downstream", percentile="avg"
+        )
+        assert latency._value._value == 0.15
 
 
 class TestSecurityCollector:
@@ -145,14 +151,14 @@ class TestSecurityCollector:
         mock_events.assert_called_once_with("system")
 
     def test_waf_data_processing(self, mock_client, sample_security_response):
-        """Test WAF data processing."""
-        mock_client.get_waf_metrics.return_value = sample_security_response
+        """Test WAF data processing with new API methods."""
+        mock_client.get_app_firewall_metrics.return_value = sample_security_response
 
         collector = SecurityCollector(mock_client)
         collector._collect_waf_metrics("system")
 
-        # Verify WAF metrics would be updated (checking calls)
-        mock_client.get_waf_metrics.assert_called_once_with("system")
+        # Verify new API method was called
+        mock_client.get_app_firewall_metrics.assert_called_once_with("system")
 
 
 class TestSyntheticMonitoringCollector:
@@ -167,43 +173,50 @@ class TestSyntheticMonitoringCollector:
         assert collector.dns_check_success is not None
         assert collector.ping_check_success is not None
 
-    def test_synthetic_metrics_collection(self, mock_client, sample_synthetic_response):
-        """Test synthetic monitoring metrics collection."""
-        mock_client.get_synthetic_monitoring_metrics.return_value = sample_synthetic_response
+    def test_synthetic_metrics_collection(self, mock_client, sample_synthetic_response, sample_synthetic_summary_response):
+        """Test synthetic monitoring metrics collection with new API methods."""
+        mock_client.get_synthetic_monitoring_health.return_value = sample_synthetic_response
+        mock_client.get_http_monitors_health.return_value = sample_synthetic_response
+        mock_client.get_synthetic_monitoring_summary.return_value = sample_synthetic_summary_response
 
         collector = SyntheticMonitoringCollector(mock_client)
         collector.collect_metrics("system")
 
-        mock_client.get_synthetic_monitoring_metrics.assert_called_once_with("system")
+        # Verify new API methods were called
+        mock_client.get_synthetic_monitoring_health.assert_called_once_with("system")
+        mock_client.get_http_monitors_health.assert_called_once_with("system")
+        mock_client.get_synthetic_monitoring_summary.assert_called_once_with("system")
 
         # Check success metric
         success_metric = collector.synthetic_collection_success.labels(namespace="system")
         assert success_metric._value._value == 1
 
-    def test_http_monitor_processing(self, mock_client, sample_synthetic_response):
-        """Test HTTP monitor data processing."""
-        mock_client.get_synthetic_monitoring_metrics.return_value = sample_synthetic_response
+    def test_http_monitor_processing(self, mock_client, sample_synthetic_response, sample_synthetic_summary_response):
+        """Test HTTP monitor data processing with new API structure."""
+        mock_client.get_synthetic_monitoring_health.return_value = sample_synthetic_response
+        mock_client.get_http_monitors_health.return_value = sample_synthetic_response
+        mock_client.get_synthetic_monitoring_summary.return_value = sample_synthetic_summary_response
 
         collector = SyntheticMonitoringCollector(mock_client)
         collector.collect_metrics("system")
 
-        # Check HTTP success metric
+        # Check HTTP success metric - using new structure
         http_success = collector.http_check_success.labels(
             namespace="system",
             monitor_name="test-monitor",
-            location="us-east-1",
+            location="global",
             target_url="https://example.com"
         )
         assert http_success._value._value == 1
 
-        # Check response time metric (converted from ms to seconds)
+        # Check response time metric (150ms -> 0.15s)
         response_time = collector.http_check_response_time.labels(
             namespace="system",
             monitor_name="test-monitor",
-            location="us-east-1",
+            location="global",
             target_url="https://example.com"
         )
-        assert response_time._value._value == 0.15  # 150ms -> 0.15s
+        assert response_time._value._value == 0.15
 
 
 class TestCollectorIntegration:
@@ -256,7 +269,7 @@ class TestCollectorIntegration:
         # Test that metrics output contains expected metric names
         metrics_str = metrics_output.decode('utf-8')
         assert 'f5xc_quota_limit' in metrics_str
-        assert 'f5xc_service_graph_http_requests_total' in metrics_str
+        assert 'f5xc_http_requests_total' in metrics_str  # Service graph HTTP metric
         assert 'f5xc_security_collection_success' in metrics_str
         assert 'f5xc_synthetic_collection_success' in metrics_str
 

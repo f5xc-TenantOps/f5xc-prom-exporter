@@ -121,36 +121,185 @@ class ServiceGraphCollector:
         """Process service graph data and update metrics."""
         logger.debug("Processing service graph data", namespace=namespace)
 
-        # Process nodes (load balancers and backends)
-        nodes = data.get("nodes", [])
+        # Response is wrapped in 'data' property
+        graph_data = data.get("data", {})
+        if not graph_data:
+            logger.warning("No 'data' property in service graph response", namespace=namespace)
+            return
+
+        # Process nodes (services/vhosts)
+        nodes = graph_data.get("nodes", [])
+        logger.debug("Processing service graph nodes", namespace=namespace, node_count=len(nodes))
         for node in nodes:
             self._process_node(node, namespace)
 
         # Process edges (connections between services)
-        edges = data.get("edges", [])
+        edges = graph_data.get("edges", [])
+        logger.debug("Processing service graph edges", namespace=namespace, edge_count=len(edges))
         for edge in edges:
             self._process_edge(edge, namespace)
 
     def _process_node(self, node: Dict[str, Any], namespace: str) -> None:
         """Process individual service node."""
-        node_type = node.get("type", "unknown")
-        node_name = node.get("name", "unknown")
-        stats = node.get("stats", {})
+        # Node structure: { "id": {...}, "data": {"healthscore": {...}, "metric": {...}} }
+        node_id = node.get("id", {})
+        node_data = node.get("data", {})
+
+        # Extract identifying information
+        vhost = node_id.get("vhost", "unknown")
+        service = node_id.get("service", "unknown")
+        site = node_id.get("site", "unknown")
+        node_namespace = node_id.get("namespace", namespace)
+
+        # Use vhost as the primary identifier (like a load balancer name)
+        lb_name = vhost if vhost != "unknown" else service
 
         logger.debug(
             "Processing service node",
-            namespace=namespace,
-            node_type=node_type,
-            node_name=node_name,
+            namespace=node_namespace,
+            vhost=vhost,
+            service=service,
+            site=site,
         )
 
-        if node_type == "load_balancer":
-            self._process_load_balancer_stats(stats, namespace, node_name)
-        elif node_type == "origin_pool":
-            self._process_origin_pool_stats(stats, namespace, node_name)
+        # Extract metrics from node data
+        metric_data = node_data.get("metric", {})
+        if not metric_data:
+            logger.debug("No metric data in node", vhost=vhost)
+            return
+
+        # Process downstream metrics (traffic from this service)
+        downstream_metrics = metric_data.get("downstream", [])
+        for metric in downstream_metrics:
+            self._process_metric(metric, node_namespace, lb_name, "downstream")
+
+        # Process upstream metrics (traffic to this service)
+        upstream_metrics = metric_data.get("upstream", [])
+        for metric in upstream_metrics:
+            self._process_metric(metric, node_namespace, lb_name, "upstream")
+
+    def _process_metric(self, metric: Dict[str, Any], namespace: str, lb_name: str, direction: str) -> None:
+        """Process a single metric from the service graph response.
+
+        Args:
+            metric: Metric object with type, unit, and value
+            namespace: The namespace
+            lb_name: Load balancer/vhost name
+            direction: 'downstream' or 'upstream'
+        """
+        metric_type = metric.get("type", "METRIC_TYPE_NONE")
+        value_data = metric.get("value", {})
+
+        # Get the latest raw value (last item in raw array)
+        raw_values = value_data.get("raw", [])
+        if not raw_values:
+            return
+
+        # Use the most recent value
+        latest_value = raw_values[-1] if raw_values else {}
+        value = latest_value.get("value")
+
+        if value is None:
+            return
+
+        try:
+            value = float(value)
+        except (ValueError, TypeError):
+            logger.warning("Failed to parse metric value", metric_type=metric_type, value=latest_value.get("value"))
+            return
+
+        # Map F5XC metric types to Prometheus metrics
+        if metric_type == "HTTP_REQUEST_RATE":
+            self.http_requests_total.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction,
+                response_class="total"
+            ).set(value)
+        elif metric_type == "HTTP_ERROR_RATE":
+            self.http_requests_total.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction,
+                response_class="error"
+            ).set(value)
+        elif metric_type == "HTTP_ERROR_RATE_4XX":
+            self.http_requests_total.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction,
+                response_class="4xx"
+            ).set(value)
+        elif metric_type == "HTTP_ERROR_RATE_5XX":
+            self.http_requests_total.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction,
+                response_class="5xx"
+            ).set(value)
+        elif metric_type == "HTTP_RESPONSE_LATENCY":
+            self.http_request_duration.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction,
+                percentile="avg"
+            ).set(value)
+        elif metric_type == "HTTP_RESPONSE_LATENCY_PERCENTILE_50":
+            self.http_request_duration.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction,
+                percentile="p50"
+            ).set(value)
+        elif metric_type == "HTTP_RESPONSE_LATENCY_PERCENTILE_90":
+            self.http_request_duration.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction,
+                percentile="p90"
+            ).set(value)
+        elif metric_type == "HTTP_RESPONSE_LATENCY_PERCENTILE_99":
+            self.http_request_duration.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction,
+                percentile="p99"
+            ).set(value)
+        elif metric_type == "TCP_CONNECTION_RATE":
+            self.tcp_connections_total.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction
+            ).set(value)
+        elif metric_type == "TCP_ERROR_RATE":
+            # Use tcp_connections_active as a proxy for TCP errors
+            self.tcp_connections_active.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction
+            ).set(value)
+        elif metric_type == "TCP_CONNECTION_DURATION":
+            # Store TCP connection duration - reusing http_request_duration with tcp marker
+            self.http_request_duration.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=f"tcp_{direction}",
+                percentile="avg"
+            ).set(value)
+        elif metric_type in ("REQUEST_THROUGHPUT", "RESPONSE_THROUGHPUT"):
+            # Store throughput as bytes transmitted
+            throughput_direction = "tx" if metric_type == "REQUEST_THROUGHPUT" else "rx"
+            self.tcp_bytes_transmitted.labels(
+                namespace=namespace,
+                load_balancer=lb_name,
+                backend=direction,
+                direction=throughput_direction
+            ).set(value)
+        else:
+            logger.debug("Unhandled metric type", metric_type=metric_type, value=value)
 
     def _process_load_balancer_stats(self, stats: Dict[str, Any], namespace: str, lb_name: str) -> None:
-        """Process load balancer statistics."""
+        """Process load balancer statistics (legacy method - kept for compatibility)."""
         # HTTP metrics
         http_stats = stats.get("http", {})
         if http_stats:

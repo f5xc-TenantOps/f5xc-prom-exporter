@@ -31,15 +31,17 @@ def mock_client(test_config):
     with patch('f5xc_exporter.client.requests.Session'):
         client = F5XCClient(test_config)
 
-        # Mock all client methods
+        # Mock all client methods (both old and new names for compatibility)
         client.get_quota_usage = Mock()
         client.get_service_graph_data = Mock()
-        client.get_waf_metrics = Mock()
-        client.get_bot_defense_metrics = Mock()
-        client.get_api_security_metrics = Mock()
-        client.get_ddos_metrics = Mock()
-        client.get_security_events = Mock()
-        client.get_synthetic_monitoring_metrics = Mock()
+
+        # New correct API method names
+        client.get_app_firewall_metrics = Mock()
+        client.get_firewall_logs = Mock()
+        client.get_access_logs_aggregation = Mock()
+        client.get_synthetic_monitoring_health = Mock()
+        client.get_synthetic_monitoring_summary = Mock()
+        client.get_http_monitors_health = Mock()
 
         yield client
 
@@ -69,85 +71,103 @@ def sample_quota_response():
 
 @pytest.fixture
 def sample_service_graph_response():
-    """Sample service graph API response."""
+    """Sample service graph API response - matches actual F5XC API structure."""
     return {
-        "nodes": [
-            {
-                "type": "load_balancer",
-                "name": "test-lb",
-                "stats": {
-                    "http": {
-                        "response_classes": {"2xx": 1000, "4xx": 50, "5xx": 10},
-                        "request_duration_percentiles": {"p50": 100, "p95": 250, "p99": 500},
-                        "active_connections": 25
+        "data": {
+            "nodes": [
+                {
+                    "id": {
+                        "namespace": "system",
+                        "service": "test-service",
+                        "vhost": "test-lb",
+                        "site": "ce01"
+                    },
+                    "data": {
+                        "healthscore": {},
+                        "metric": {
+                            "downstream": [
+                                {
+                                    "type": "HTTP_REQUEST_RATE",
+                                    "unit": "per second",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 100.5}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_RESPONSE_LATENCY",
+                                    "unit": "seconds",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.15}]
+                                    }
+                                }
+                            ],
+                            "upstream": [
+                                {
+                                    "type": "HTTP_REQUEST_RATE",
+                                    "unit": "per second",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 95.0}]
+                                    }
+                                }
+                            ]
+                        }
                     }
                 }
-            },
-            {
-                "type": "origin_pool",
-                "name": "test-pool",
-                "stats": {
-                    "http": {
-                        "response_classes": {"2xx": 980, "5xx": 15},
-                        "active_connections": 20
-                    }
-                }
-            }
-        ],
-        "edges": []
+            ],
+            "edges": []
+        },
+        "step": "1m"
     }
 
 
 @pytest.fixture
 def sample_security_response():
-    """Sample security API response."""
+    """Sample security API response - matches F5XC app_firewall/metrics structure."""
     return {
-        "requests": [
-            {"app": "test-app", "action": "block", "rule_type": "owasp", "count": 25},
-            {"app": "test-app", "action": "allow", "rule_type": "custom", "count": 1000}
-        ],
-        "blocked_requests": [
-            {"app": "test-app", "attack_type": "sql_injection", "count": 15}
-        ],
-        "rule_hits": [
-            {"app": "test-app", "rule_id": "rule-001", "rule_type": "owasp", "count": 30}
+        "metrics": [
+            {"vhost_name": "test-app", "attack_type": "sql_injection", "count": 15},
+            {"vhost_name": "test-app", "attack_type": "xss", "count": 10}
+        ]
+    }
+
+
+@pytest.fixture
+def sample_firewall_logs_response():
+    """Sample firewall logs API response."""
+    return {
+        "total": 25,
+        "events": [
+            {"vhost": "test-app", "type": "block", "severity": "high"},
+            {"vhost": "test-app", "type": "alert", "severity": "medium"}
         ]
     }
 
 
 @pytest.fixture
 def sample_synthetic_response():
-    """Sample synthetic monitoring API response."""
+    """Sample synthetic monitoring API response - matches F5XC health endpoint structure."""
     return {
-        "http_monitors": [
+        "monitors": [
             {
                 "name": "test-monitor",
-                "target_url": "https://example.com",
-                "results": [
-                    {
-                        "location": "us-east-1",
-                        "success": True,
-                        "response_time": 150,
-                        "status_code": 200,
-                        "connect_time": 50,
-                        "ttfb": 100
-                    }
-                ]
+                "type": "http",
+                "target": "https://example.com",
+                "status": "healthy",
+                "response_time": 150
             }
-        ],
-        "dns_monitors": [
-            {
-                "name": "dns-test",
-                "target_domain": "example.com",
-                "results": [
-                    {
-                        "location": "us-west-2",
-                        "success": True,
-                        "response_time": 25,
-                        "records": [{"type": "A"}, {"type": "A"}]
-                    }
-                ]
-            }
+        ]
+    }
+
+
+@pytest.fixture
+def sample_synthetic_summary_response():
+    """Sample synthetic monitoring summary response."""
+    return {
+        "total_monitors": 10,
+        "healthy_monitors": 8,
+        "unhealthy_monitors": 2,
+        "monitors": [
+            {"name": "test-monitor", "uptime": 99.5}
         ]
     }
 

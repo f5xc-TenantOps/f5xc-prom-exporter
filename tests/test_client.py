@@ -162,50 +162,67 @@ class TestF5XCClient:
 
     @responses.activate
     def test_get_security_methods(self, test_config):
-        """Test security-related API methods."""
-        # Mock all security endpoints
-        security_endpoints = [
-            "waf/metrics",
-            "bot_defense/metrics",
-            "api_security/metrics",
-            "ddos/metrics",
-            "security/events"
-        ]
-
-        for endpoint in security_endpoints:
-            responses.add(
-                responses.GET,
-                f"https://test.console.ves.volterra.io/api/web/namespaces/system/{endpoint}",
-                json={"data": f"test_{endpoint.replace('/', '_')}"},
-                status=200
-            )
-
-        client = F5XCClient(test_config)
-
-        # Test each method
-        assert client.get_waf_metrics()["data"] == "test_waf_metrics"
-        assert client.get_bot_defense_metrics()["data"] == "test_bot_defense_metrics"
-        assert client.get_api_security_metrics()["data"] == "test_api_security_metrics"
-        assert client.get_ddos_metrics()["data"] == "test_ddos_metrics"
-
-        # Security events has query parameters
-        events_result = client.get_security_events()
-        assert events_result["data"] == "test_security_events"
-
-    @responses.activate
-    def test_get_synthetic_monitoring_metrics(self, test_config, sample_synthetic_response):
-        """Test synthetic monitoring API method."""
+        """Test security-related API methods with correct endpoints."""
+        # Mock the correct API endpoints
         responses.add(
-            responses.GET,
-            "https://test.console.ves.volterra.io/api/web/namespaces/system/synthetic_monitoring/metrics",
-            json=sample_synthetic_response,
+            responses.POST,
+            "https://test.console.ves.volterra.io/api/data/namespaces/system/app_firewall/metrics",
+            json={"metrics": []},
+            status=200
+        )
+        responses.add(
+            responses.POST,
+            "https://test.console.ves.volterra.io/api/data/namespaces/system/firewall_logs",
+            json={"total": 0, "events": []},
+            status=200
+        )
+        responses.add(
+            responses.POST,
+            "https://test.console.ves.volterra.io/api/data/namespaces/system/access_logs/aggregation",
+            json={"aggs": {}},
             status=200
         )
 
         client = F5XCClient(test_config)
-        result = client.get_synthetic_monitoring_metrics()
 
+        # Test new API methods
+        assert "metrics" in client.get_app_firewall_metrics()
+        assert "total" in client.get_firewall_logs()
+        assert "aggs" in client.get_access_logs_aggregation()
+
+    @responses.activate
+    def test_get_synthetic_monitoring_metrics(self, test_config, sample_synthetic_response):
+        """Test synthetic monitoring API methods with correct endpoints."""
+        responses.add(
+            responses.POST,
+            "https://test.console.ves.volterra.io/api/observability/synthetic_monitor/namespaces/system/health",
+            json=sample_synthetic_response,
+            status=200
+        )
+        responses.add(
+            responses.POST,
+            "https://test.console.ves.volterra.io/api/observability/synthetic_monitor/namespaces/system/global-summary",
+            json={"total_monitors": 10},
+            status=200
+        )
+        responses.add(
+            responses.POST,
+            "https://test.console.ves.volterra.io/api/observability/synthetic_monitor/namespaces/system/http-monitors-health",
+            json={"monitors": []},
+            status=200
+        )
+
+        client = F5XCClient(test_config)
+
+        # Test new API methods
+        result = client.get_synthetic_monitoring_health()
         assert result == sample_synthetic_response
+
+        summary = client.get_synthetic_monitoring_summary()
+        assert summary["total_monitors"] == 10
+
+        http_health = client.get_http_monitors_health()
+        assert "monitors" in http_health
 
     def test_client_close(self, test_config):
         """Test client close method."""

@@ -147,42 +147,109 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_waf_metrics(self, namespace: str = "system") -> Dict[str, Any]:
-        """Get WAF metrics for namespace."""
-        endpoint = f"/api/web/namespaces/{namespace}/waf/metrics"
-        return self.get(endpoint)
+    def get_app_firewall_metrics(self, namespace: str = "system") -> Dict[str, Any]:
+        """Get app firewall (WAF) metrics for namespace.
 
-    def get_bot_defense_metrics(self, namespace: str = "system") -> Dict[str, Any]:
-        """Get bot defense metrics for namespace."""
-        endpoint = f"/api/web/namespaces/{namespace}/bot_defense/metrics"
-        return self.get(endpoint)
+        Uses the correct F5XC API endpoint: /api/data/namespaces/{namespace}/app_firewall/metrics
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/app_firewall/metrics"
 
-    def get_api_security_metrics(self, namespace: str = "system") -> Dict[str, Any]:
-        """Get API security metrics for namespace."""
-        endpoint = f"/api/web/namespaces/{namespace}/api_security/metrics"
-        return self.get(endpoint)
-
-    def get_ddos_metrics(self, namespace: str = "system") -> Dict[str, Any]:
-        """Get DDoS metrics for namespace."""
-        endpoint = f"/api/web/namespaces/{namespace}/ddos/metrics"
-        return self.get(endpoint)
-
-    def get_security_events(self, namespace: str = "system") -> Dict[str, Any]:
-        """Get security events for namespace."""
-        endpoint = f"/api/web/namespaces/{namespace}/security/events"
-
-        # Security events API typically requires time range
-        params = {
+        # App firewall metrics requires POST with query parameters
+        payload = {
+            "namespace": namespace,
+            "agg_type": "sum",
+            "group_by": ["vhost_name", "attack_type"],
             "start_time": int(time.time() - 3600),  # Last hour
             "end_time": int(time.time())
         }
 
-        return self.get(endpoint, params=params)
+        return self.post(endpoint, json=payload)
 
-    def get_synthetic_monitoring_metrics(self, namespace: str = "system") -> Dict[str, Any]:
-        """Get synthetic monitoring metrics for namespace."""
-        endpoint = f"/api/web/namespaces/{namespace}/synthetic_monitoring/metrics"
-        return self.get(endpoint)
+    def get_firewall_logs(self, namespace: str = "system") -> Dict[str, Any]:
+        """Get firewall logs (security events) for namespace.
+
+        Uses the correct F5XC API endpoint: /api/data/namespaces/{namespace}/firewall_logs
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/firewall_logs"
+
+        # Firewall logs requires POST with query parameters
+        payload = {
+            "namespace": namespace,
+            "start_time": int(time.time() - 3600),  # Last hour
+            "end_time": int(time.time()),
+            "agg": {
+                "type": "cardinality",
+                "field": "req_id"
+            }
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_access_logs_aggregation(self, namespace: str = "system") -> Dict[str, Any]:
+        """Get aggregated access logs for namespace.
+
+        Uses the correct F5XC API endpoint: /api/data/namespaces/{namespace}/access_logs/aggregation
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/access_logs/aggregation"
+
+        # Access logs aggregation requires POST with query parameters
+        payload = {
+            "namespace": namespace,
+            "start_time": int(time.time() - 3600),  # Last hour
+            "end_time": int(time.time()),
+            "aggs": {
+                "response_codes": {
+                    "field": "rsp_code_class",
+                    "topk": 10
+                }
+            }
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_synthetic_monitoring_health(self, namespace: str = "system") -> Dict[str, Any]:
+        """Get synthetic monitoring health status for namespace.
+
+        Uses the correct F5XC API endpoint: /api/observability/synthetic_monitor/namespaces/{namespace}/health
+        """
+        endpoint = f"/api/observability/synthetic_monitor/namespaces/{namespace}/health"
+
+        # Synthetic monitoring health requires POST
+        payload = {
+            "namespace": namespace
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_synthetic_monitoring_summary(self, namespace: str = "system") -> Dict[str, Any]:
+        """Get synthetic monitoring global summary for namespace.
+
+        Uses the correct F5XC API endpoint: /api/observability/synthetic_monitor/namespaces/{namespace}/global-summary
+        """
+        endpoint = f"/api/observability/synthetic_monitor/namespaces/{namespace}/global-summary"
+
+        # Global summary requires POST with time range
+        payload = {
+            "namespace": namespace,
+            "start_time": int(time.time() - 3600),  # Last hour
+            "end_time": int(time.time())
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_http_monitors_health(self, namespace: str = "system") -> Dict[str, Any]:
+        """Get HTTP monitors health for namespace.
+
+        Uses the correct F5XC API endpoint: /api/observability/synthetic_monitor/namespaces/{namespace}/http-monitors-health
+        """
+        endpoint = f"/api/observability/synthetic_monitor/namespaces/{namespace}/http-monitors-health"
+
+        # HTTP monitors health requires POST
+        payload = {
+            "namespace": namespace
+        }
+
+        return self.post(endpoint, json=payload)
 
     def close(self) -> None:
         """Close the session."""
