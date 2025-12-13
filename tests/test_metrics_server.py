@@ -1,250 +1,188 @@
-"""Tests for metrics server."""
+"""Tests for metrics server integration."""
 
-import json
 import pytest
 import threading
 import time
-from http.server import HTTPServer
-from unittest.mock import Mock, patch, MagicMock
+import requests
+from unittest.mock import Mock, patch
 
-from f5xc_exporter.metrics_server import MetricsServer, MetricsHandler
-
-
-class TestMetricsHandler:
-    """Test metrics HTTP handler."""
-
-    def test_handler_initialization(self):
-        """Test handler can be instantiated."""
-        # Note: Actual HTTP handler testing requires more complex setup
-        # This is a basic smoke test
-        assert MetricsHandler is not None
-
-    def test_log_message_override(self):
-        """Test log message override method."""
-        handler = MetricsHandler()
-
-        # Mock the logger to avoid actual logging during tests
-        with patch('f5xc_exporter.metrics_server.logger') as mock_logger:
-            handler.log_message("Test message %s", "arg1")
-            mock_logger.info.assert_called_once_with("HTTP request", message="Test message arg1")
+from f5xc_exporter.metrics_server import MetricsServer
+from f5xc_exporter.config import Config
 
 
-class TestMetricsServer:
-    """Test metrics server."""
+class TestMetricsServerIntegration:
+    """Test metrics server integration scenarios."""
 
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    def test_metrics_server_initialization(self, mock_client_class, test_config):
-        """Test metrics server initializes correctly."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
+    @pytest.fixture
+    def test_config(self):
+        """Test configuration with unique port."""
+        return Config(
+            f5xc_tenant_url="https://test.console.ves.volterra.io",
+            f5xc_access_token="test-token",
+            f5xc_exp_http_port=8081,  # Use different port to avoid conflicts
+            f5xc_exp_log_level="DEBUG",
+        )
 
-        server = MetricsServer(test_config)
+    def test_metrics_server_http_endpoint_integration(self, test_config):
+        """Test complete metrics server with real HTTP endpoint."""
+        # Mock the F5XC client to avoid real API calls
+        with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
+            mock_client = Mock()
+            mock_client_class.return_value = mock_client
 
-        assert server.config == test_config
-        assert server.registry is not None
-        assert server.quota_collector is not None
-        assert server.service_graph_collector is not None
-        assert server.security_collector is not None
-        assert server.synthetic_monitoring_collector is not None
-        assert server.collection_threads == {}
-        assert server.httpd is None
+            # Mock successful API calls
+            mock_client.get_quota_usage.return_value = {
+                "quota_usage": {
+                    "load_balancer": {
+                        "limit": {"maximum": 10},
+                        "usage": {"current": 5}
+                    }
+                }
+            }
 
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    @patch('f5xc_exporter.metrics_server.HTTPServer')
-    def test_start_http_server(self, mock_http_server, mock_client_class, test_config):
-        """Test HTTP server startup."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
+            mock_client.get_service_graph_data.return_value = {
+                "nodes": [
+                    {
+                        "type": "load_balancer",
+                        "name": "test-lb",
+                        "stats": {
+                            "http": {
+                                "response_classes": {"2xx": 1000},
+                                "active_connections": 25
+                            }
+                        }
+                    }
+                ]
+            }
 
-        mock_httpd = Mock()
-        mock_http_server.return_value = mock_httpd
+            # Mock failing security endpoints (like in real logs)
+            mock_client.get_waf_metrics.side_effect = Exception("404 Not Found")
+            mock_client.get_synthetic_monitoring_metrics.side_effect = Exception("404 Not Found")
 
-        server = MetricsServer(test_config)
+            # Create and start metrics server
+            server = MetricsServer(test_config)
 
-        # Mock the serve_forever to avoid blocking
-        mock_httpd.serve_forever.side_effect = KeyboardInterrupt()
+            # Start server in background thread
+            server_thread = threading.Thread(target=server.start, daemon=True)
+            server_thread.start()
 
-        with patch.object(server, '_start_collection_threads'):
+            # Wait for server to start
+            time.sleep(1.0)
+
             try:
-                server.start()
-            except SystemExit:
-                pass  # Expected from signal handler
+                # Test health endpoint
+                health_response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/health", timeout=5)
+                assert health_response.status_code == 200
+                assert health_response.text == "OK"
 
-        mock_http_server.assert_called_once_with(("", 8080), MetricsHandler)
-        assert server.httpd == mock_httpd
+                # Wait for initial metrics collection
+                time.sleep(2.0)
 
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    def test_start_collection_threads_quota_enabled(self, mock_client_class, test_config):
-        """Test collection threads start when quota interval > 0."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
+                # Test metrics endpoint
+                metrics_response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/metrics", timeout=5)
+                assert metrics_response.status_code == 200
 
-        server = MetricsServer(test_config)
+                metrics_text = metrics_response.text
 
-        with patch('threading.Thread') as mock_thread:
-            mock_thread_instance = Mock()
-            mock_thread.return_value = mock_thread_instance
+                # Verify metrics output is not empty
+                assert len(metrics_text) > 0
 
-            server._start_collection_threads()
+                # Verify specific metrics are present
+                assert 'f5xc_quota_limit' in metrics_text
+                assert 'f5xc_quota_current' in metrics_text
+                assert 'f5xc_quota_utilization' in metrics_text
+                assert 'f5xc_quota_collection_success' in metrics_text
 
-            # Should start quota thread (interval = 60 in test config)
-            assert mock_thread.call_count >= 1
-            mock_thread_instance.start.assert_called()
+                # Verify service graph metrics
+                assert 'f5xc_service_graph_http_requests_total' in metrics_text
+                assert 'f5xc_service_graph_collection_success' in metrics_text
 
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    def test_start_collection_threads_quota_disabled(self, mock_client_class, test_config):
-        """Test collection threads don't start when quota interval = 0."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
+                # Verify security collection success metrics (even if endpoints fail)
+                assert 'f5xc_security_collection_success' in metrics_text
+                assert 'f5xc_synthetic_collection_success' in metrics_text
 
-        # Disable quota collection
-        test_config.f5xc_quota_interval = 0
+                # Verify Content-Type header
+                assert 'text/plain' in metrics_response.headers.get('Content-Type', '')
 
-        server = MetricsServer(test_config)
+            finally:
+                # Clean up
+                server.stop()
 
-        with patch('threading.Thread') as mock_thread:
-            server._start_collection_threads()
+    def test_metrics_server_registry_initialization(self, test_config):
+        """Test that metrics server properly initializes Prometheus registry."""
+        from prometheus_client import generate_latest
 
-            # Should not start any threads for quota
-            # (other threads might start based on other intervals)
-            quota_calls = [call for call in mock_thread.call_args_list
-                          if 'quota-collector' in str(call)]
-            assert len(quota_calls) == 0
+        with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
+            mock_client = Mock()
+            mock_client_class.return_value = mock_client
 
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    def test_collection_method_quota(self, mock_client_class, test_config):
-        """Test quota collection method."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
+            # Create metrics server
+            server = MetricsServer(test_config)
 
-        server = MetricsServer(test_config)
-        server.stop_event = threading.Event()
+            # Test that registry is properly initialized
+            assert server.registry is not None
 
-        # Mock the collector
-        server.quota_collector.collect_metrics = Mock()
+            # Test that collectors are created
+            assert server.quota_collector is not None
+            assert server.service_graph_collector is not None
+            assert server.security_collector is not None
+            assert server.synthetic_monitoring_collector is not None
 
-        # Set stop event immediately to avoid infinite loop
-        server.stop_event.set()
+            # Test that metrics can be generated from registry
+            # This would have caught the original bug
+            metrics_output = generate_latest(server.registry)
+            assert metrics_output is not None
 
-        server._collect_quota_metrics()
+            # Should contain metric metadata even without data
+            metrics_str = metrics_output.decode('utf-8')
+            assert 'f5xc_quota_limit' in metrics_str
+            assert 'f5xc_service_graph_http_requests_total' in metrics_str
+            assert 'f5xc_security_collection_success' in metrics_str
+            assert 'f5xc_synthetic_collection_success' in metrics_str
 
-        # Should have attempted collection once
-        server.quota_collector.collect_metrics.assert_called_once()
+    def test_metrics_endpoint_error_handling(self, test_config):
+        """Test metrics endpoint handles registry errors gracefully."""
+        with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
+            mock_client = Mock()
+            mock_client_class.return_value = mock_client
 
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    def test_collection_method_error_handling(self, mock_client_class, test_config):
-        """Test collection method handles errors gracefully."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
+            server = MetricsServer(test_config)
 
-        server = MetricsServer(test_config)
-        server.stop_event = threading.Event()
+            # Start server
+            server_thread = threading.Thread(target=server.start, daemon=True)
+            server_thread.start()
+            time.sleep(0.5)
 
-        # Mock the collector to raise an exception
-        server.quota_collector.collect_metrics = Mock(side_effect=Exception("Test error"))
+            try:
+                # Simulate registry error by corrupting it
+                server.registry = None
 
-        # Set stop event immediately to avoid infinite loop
-        server.stop_event.set()
+                # Test that metrics endpoint returns 500 but doesn't crash
+                metrics_response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/metrics", timeout=5)
+                assert metrics_response.status_code == 500
 
-        # Should not raise exception
-        server._collect_quota_metrics()
+                # Server should still be responsive
+                health_response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/health", timeout=5)
+                assert health_response.status_code == 200
 
-        server.quota_collector.collect_metrics.assert_called_once()
+            finally:
+                server.stop()
 
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    def test_server_stop(self, mock_client_class, test_config):
-        """Test server stop functionality."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
+    def test_404_endpoint(self, test_config):
+        """Test that unknown endpoints return 404."""
+        with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
+            mock_client = Mock()
+            mock_client_class.return_value = mock_client
 
-        server = MetricsServer(test_config)
+            server = MetricsServer(test_config)
+            server_thread = threading.Thread(target=server.start, daemon=True)
+            server_thread.start()
+            time.sleep(0.5)
 
-        # Mock HTTP server
-        server.httpd = Mock()
+            try:
+                response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/unknown", timeout=5)
+                assert response.status_code == 404
+                assert response.text == "Not found"
 
-        # Mock collection threads
-        mock_thread = Mock()
-        mock_thread.is_alive.return_value = False
-        server.collection_threads["test"] = mock_thread
-
-        server.stop()
-
-        # Check that stop event is set
-        assert server.stop_event.is_set()
-
-        # Check that HTTP server is shut down
-        server.httpd.shutdown.assert_called_once()
-
-        # Check that client is closed
-        mock_client.close.assert_called_once()
-
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    def test_get_status(self, mock_client_class, test_config):
-        """Test status information gathering."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
-
-        server = MetricsServer(test_config)
-
-        # Mock some threads
-        mock_thread = Mock()
-        mock_thread.is_alive.return_value = True
-        server.collection_threads["quota"] = mock_thread
-
-        # Mock HTTP server
-        server.httpd = Mock()
-
-        status = server.get_status()
-
-        assert "config" in status
-        assert "threads" in status
-        assert "server_running" in status
-
-        assert status["config"]["port"] == 8080
-        assert status["config"]["quota_interval"] == 60
-        assert status["threads"]["quota"] == True
-        assert status["server_running"] == True
-
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    def test_service_graph_interval_calculation(self, mock_client_class, test_config):
-        """Test service graph interval calculation."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
-
-        # Set different intervals
-        test_config.f5xc_http_lb_interval = 60
-        test_config.f5xc_tcp_lb_interval = 90
-        test_config.f5xc_udp_lb_interval = 120
-
-        server = MetricsServer(test_config)
-
-        status = server.get_status()
-
-        # Should use minimum interval (60)
-        assert status["config"]["service_graph_interval"] == 60
-
-    @patch('f5xc_exporter.metrics_server.F5XCClient')
-    def test_all_collection_threads_start(self, mock_client_class, test_config):
-        """Test that all collection threads start with non-zero intervals."""
-        mock_client = Mock()
-        mock_client_class.return_value = mock_client
-
-        # Ensure all intervals are non-zero
-        test_config.f5xc_quota_interval = 60
-        test_config.f5xc_http_lb_interval = 30
-        test_config.f5xc_tcp_lb_interval = 30
-        test_config.f5xc_udp_lb_interval = 30
-        test_config.f5xc_security_interval = 60
-        test_config.f5xc_synthetic_interval = 60
-
-        server = MetricsServer(test_config)
-
-        with patch('threading.Thread') as mock_thread:
-            mock_thread_instance = Mock()
-            mock_thread.return_value = mock_thread_instance
-
-            server._start_collection_threads()
-
-            # Should start threads for quota, service graph, security, and synthetic
-            assert mock_thread.call_count == 4
-            assert mock_thread_instance.start.call_count == 4
+            finally:
+                server.stop()

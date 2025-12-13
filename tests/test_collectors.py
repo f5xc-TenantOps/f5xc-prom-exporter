@@ -210,26 +210,55 @@ class TestCollectorIntegration:
     """Test collector integration scenarios."""
 
     def test_all_collectors_with_prometheus_registry(self, mock_client):
-        """Test all collectors can be used with Prometheus registry."""
-        # Use a custom registry to avoid conflicts
-        from prometheus_client import CollectorRegistry
+        """Test all collectors can be properly registered with Prometheus registry."""
+        from prometheus_client import CollectorRegistry, generate_latest
 
-        # Create collectors one at a time to test they don't conflict
-        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
-            quota_collector = QuotaCollector(mock_client)
-            assert quota_collector is not None
+        # Create a custom registry for testing
+        registry = CollectorRegistry()
 
-        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
-            service_graph_collector = ServiceGraphCollector(mock_client)
-            assert service_graph_collector is not None
+        # Create collectors
+        quota_collector = QuotaCollector(mock_client)
+        service_graph_collector = ServiceGraphCollector(mock_client)
+        security_collector = SecurityCollector(mock_client)
+        synthetic_collector = SyntheticMonitoringCollector(mock_client)
 
-        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
-            security_collector = SecurityCollector(mock_client)
-            assert security_collector is not None
+        # Register individual metrics with registry (like MetricsServer does)
+        registry.register(quota_collector.quota_limit)
+        registry.register(quota_collector.quota_current)
+        registry.register(quota_collector.quota_utilization)
+        registry.register(quota_collector.quota_collection_success)
+        registry.register(quota_collector.quota_collection_duration)
 
-        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
-            synthetic_collector = SyntheticMonitoringCollector(mock_client)
-            assert synthetic_collector is not None
+        registry.register(service_graph_collector.http_requests_total)
+        registry.register(service_graph_collector.http_request_duration)
+        registry.register(service_graph_collector.tcp_connections_total)
+        registry.register(service_graph_collector.service_graph_collection_success)
+        registry.register(service_graph_collector.service_graph_collection_duration)
+
+        registry.register(security_collector.waf_requests_total)
+        registry.register(security_collector.bot_requests_total)
+        registry.register(security_collector.security_events_total)
+        registry.register(security_collector.security_collection_success)
+        registry.register(security_collector.security_collection_duration)
+
+        registry.register(synthetic_collector.http_check_success)
+        registry.register(synthetic_collector.dns_check_success)
+        registry.register(synthetic_collector.ping_check_success)
+        registry.register(synthetic_collector.http_check_response_time)
+        registry.register(synthetic_collector.synthetic_collection_success)
+        registry.register(synthetic_collector.synthetic_collection_duration)
+
+        # Test that metrics can be generated (this would have caught the bug)
+        metrics_output = generate_latest(registry)
+        assert metrics_output is not None
+        assert len(metrics_output) > 0
+
+        # Test that metrics output contains expected metric names
+        metrics_str = metrics_output.decode('utf-8')
+        assert 'f5xc_quota_limit' in metrics_str
+        assert 'f5xc_service_graph_http_requests_total' in metrics_str
+        assert 'f5xc_security_collection_success' in metrics_str
+        assert 'f5xc_synthetic_collection_success' in metrics_str
 
     def test_collector_error_handling(self, mock_client):
         """Test collector error handling doesn't crash."""
