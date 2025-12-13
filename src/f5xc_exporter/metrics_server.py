@@ -86,11 +86,35 @@ class MetricsServer:
         self.security_collector = SecurityCollector(self.client)
         self.synthetic_monitoring_collector = SyntheticMonitoringCollector(self.client)
 
-        # Register collectors with Prometheus registry
-        self.registry.register(self.quota_collector)
-        self.registry.register(self.service_graph_collector)
-        self.registry.register(self.security_collector)
-        self.registry.register(self.synthetic_monitoring_collector)
+        # Register individual metrics with Prometheus registry
+        # Quota metrics
+        self.registry.register(self.quota_collector.quota_limit)
+        self.registry.register(self.quota_collector.quota_current)
+        self.registry.register(self.quota_collector.quota_utilization)
+        self.registry.register(self.quota_collector.quota_collection_success)
+        self.registry.register(self.quota_collector.quota_collection_duration)
+
+        # Service graph metrics
+        self.registry.register(self.service_graph_collector.http_requests_total)
+        self.registry.register(self.service_graph_collector.http_request_duration)
+        self.registry.register(self.service_graph_collector.tcp_connections_total)
+        self.registry.register(self.service_graph_collector.service_graph_collection_success)
+        self.registry.register(self.service_graph_collector.service_graph_collection_duration)
+
+        # Security metrics
+        self.registry.register(self.security_collector.waf_requests_total)
+        self.registry.register(self.security_collector.bot_requests_total)
+        self.registry.register(self.security_collector.security_events_total)
+        self.registry.register(self.security_collector.security_collection_success)
+        self.registry.register(self.security_collector.security_collection_duration)
+
+        # Synthetic monitoring metrics
+        self.registry.register(self.synthetic_monitoring_collector.http_check_success)
+        self.registry.register(self.synthetic_monitoring_collector.dns_check_success)
+        self.registry.register(self.synthetic_monitoring_collector.ping_check_success)
+        self.registry.register(self.synthetic_monitoring_collector.http_check_response_time)
+        self.registry.register(self.synthetic_monitoring_collector.synthetic_collection_success)
+        self.registry.register(self.synthetic_monitoring_collector.synthetic_collection_duration)
 
         # Collection threads
         self.collection_threads: Dict[str, threading.Thread] = {}
