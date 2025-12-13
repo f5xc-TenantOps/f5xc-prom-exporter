@@ -80,11 +80,17 @@ class MetricsServer:
         self.registry = CollectorRegistry()
         self.client = F5XCClient(config)
 
-        # Initialize collectors
+        # Initialize collectors and register them with the registry
         self.quota_collector = QuotaCollector(self.client)
         self.service_graph_collector = ServiceGraphCollector(self.client)
         self.security_collector = SecurityCollector(self.client)
         self.synthetic_monitoring_collector = SyntheticMonitoringCollector(self.client)
+
+        # Register collectors with Prometheus registry
+        self.registry.register(self.quota_collector)
+        self.registry.register(self.service_graph_collector)
+        self.registry.register(self.security_collector)
+        self.registry.register(self.synthetic_monitoring_collector)
 
         # Collection threads
         self.collection_threads: Dict[str, threading.Thread] = {}
