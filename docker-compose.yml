@@ -6,11 +6,9 @@
 #     context: .
 #     dockerfile: Dockerfile
 
-version: '3.8'
-
 services:
   f5xc-exporter:
-    image: ghcr.io/f5xc-tenantops/f5xc-prom-exporter:latest
+    image: ghcr.io/f5xc-tenantops/f5xc-prom-exporter:staging
     ports:
       - "8080:8080"
     environment:

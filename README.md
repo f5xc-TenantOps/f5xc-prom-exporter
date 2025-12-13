@@ -32,7 +32,7 @@ export F5XC_ACCESS_TOKEN="your-access-token"
 docker run -p 8080:8080 \
   -e F5XC_TENANT_URL="https://your-tenant.console.ves.volterra.io" \
   -e F5XC_ACCESS_TOKEN="your-token" \
-  ghcr.io/f5xc-tenantops/f5xc-prom-exporter:latest
+  ghcr.io/f5xc-tenantops/f5xc-prom-exporter:staging
 ```
 
 Or using docker-compose:
