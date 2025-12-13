@@ -1,14 +1,19 @@
 # F5 Distributed Cloud Prometheus Exporter
 #
 # Uses the published container image from GitHub Container Registry.
-# For local development, replace 'image:' with:
-#   build:
-#     context: .
-#     dockerfile: Dockerfile
+#
+# Image selection:
+#   - Default: uses 'latest' stable image
+#   - Staging: set F5XC_IMAGE_TAG=staging for development builds
+#   - Local dev: replace 'image:' with build directive
+#
+# Examples:
+#   docker-compose up -d                           # latest stable
+#   F5XC_IMAGE_TAG=staging docker-compose up -d   # staging build
 
 services:
   f5xc-exporter:
-    image: ghcr.io/f5xc-tenantops/f5xc-prom-exporter:staging
+    image: ghcr.io/f5xc-tenantops/f5xc-prom-exporter:${F5XC_IMAGE_TAG:-latest}
     ports:
       - "8080:8080"
     environment:
