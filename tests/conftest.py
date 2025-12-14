@@ -46,12 +46,81 @@ def mock_client(test_config):
         client.get_tcp_lb_metrics = Mock()
         client.get_udp_lb_metrics = Mock()
 
-        # Unified LB metrics methods
+        # Unified LB metrics methods (used by LoadBalancerCollector)
         client.list_namespaces = Mock()
         client.get_all_lb_metrics_for_namespace = Mock()
         client.get_all_lb_metrics = Mock()
 
         yield client
+
+
+@pytest.fixture
+def sample_unified_lb_response():
+    """Sample unified LB metrics API response - contains HTTP, TCP, and UDP LBs."""
+    return {
+        "data": {
+            "nodes": [
+                # HTTP LB
+                {
+                    "id": {
+                        "namespace": "prod",
+                        "vhost": "app-frontend",
+                        "site": "ce-site-1",
+                        "virtual_host_type": "HTTP_LOAD_BALANCER"
+                    },
+                    "data": {
+                        "metric": {
+                            "downstream": [
+                                {"type": "HTTP_REQUEST_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 150.5}]}},
+                                {"type": "HTTP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 2.5}]}},
+                                {"type": "HTTP_RESPONSE_LATENCY", "value": {"raw": [{"timestamp": 1234567890, "value": 0.025}]}},
+                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 1000000}]}},
+                                {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.010}]}},
+                            ]
+                        }
+                    }
+                },
+                # TCP LB
+                {
+                    "id": {
+                        "namespace": "prod",
+                        "vhost": "tcp-backend",
+                        "site": "ce-site-1",
+                        "virtual_host_type": "TCP_LOAD_BALANCER"
+                    },
+                    "data": {
+                        "metric": {
+                            "downstream": [
+                                {"type": "TCP_CONNECTION_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 50.0}]}},
+                                {"type": "TCP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 1.5}]}},
+                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 500000}]}},
+                                {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.008}]}},
+                            ]
+                        }
+                    }
+                },
+                # UDP LB
+                {
+                    "id": {
+                        "namespace": "prod",
+                        "vhost": "udp-dns-lb",
+                        "site": "ce-site-1",
+                        "virtual_host_type": "UDP_LOAD_BALANCER"
+                    },
+                    "data": {
+                        "metric": {
+                            "downstream": [
+                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 100000}]}},
+                                {"type": "RESPONSE_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 200000}]}},
+                                {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.005}]}},
+                            ]
+                        }
+                    }
+                }
+            ],
+            "edges": []
+        }
+    }
 
 
 @pytest.fixture

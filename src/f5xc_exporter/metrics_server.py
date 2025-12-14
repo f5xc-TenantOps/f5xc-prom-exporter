@@ -14,9 +14,7 @@ from .collectors import (
     ServiceGraphCollector,
     SecurityCollector,
     SyntheticMonitoringCollector,
-    HttpLoadBalancerCollector,
-    TcpLoadBalancerCollector,
-    UdpLoadBalancerCollector,
+    LoadBalancerCollector,
 )
 from .config import Config
 
@@ -88,9 +86,7 @@ class MetricsServer:
         self.service_graph_collector = ServiceGraphCollector(self.client)
         self.security_collector = SecurityCollector(self.client)
         self.synthetic_monitoring_collector = SyntheticMonitoringCollector(self.client)
-        self.http_lb_collector = HttpLoadBalancerCollector(self.client)
-        self.tcp_lb_collector = TcpLoadBalancerCollector(self.client)
-        self.udp_lb_collector = UdpLoadBalancerCollector(self.client)
+        self.lb_collector = LoadBalancerCollector(self.client)
 
         # Register individual metrics with Prometheus registry
         # Quota metrics
@@ -147,45 +143,44 @@ class MetricsServer:
         self.registry.register(self.synthetic_monitoring_collector.synthetic_collection_success)
         self.registry.register(self.synthetic_monitoring_collector.synthetic_collection_duration)
 
-        # HTTP Load Balancer metrics
-        self.registry.register(self.http_lb_collector.request_rate)
-        self.registry.register(self.http_lb_collector.request_to_origin_rate)
-        self.registry.register(self.http_lb_collector.error_rate)
-        self.registry.register(self.http_lb_collector.error_rate_4xx)
-        self.registry.register(self.http_lb_collector.error_rate_5xx)
-        self.registry.register(self.http_lb_collector.latency)
-        self.registry.register(self.http_lb_collector.latency_p50)
-        self.registry.register(self.http_lb_collector.latency_p90)
-        self.registry.register(self.http_lb_collector.latency_p99)
-        self.registry.register(self.http_lb_collector.app_latency)
-        self.registry.register(self.http_lb_collector.server_data_transfer_time)
-        self.registry.register(self.http_lb_collector.request_throughput)
-        self.registry.register(self.http_lb_collector.response_throughput)
-        self.registry.register(self.http_lb_collector.client_rtt)
-        self.registry.register(self.http_lb_collector.server_rtt)
-        self.registry.register(self.http_lb_collector.collection_success)
-        self.registry.register(self.http_lb_collector.collection_duration)
-
-        # TCP Load Balancer metrics
-        self.registry.register(self.tcp_lb_collector.connection_rate)
-        self.registry.register(self.tcp_lb_collector.connection_duration)
-        self.registry.register(self.tcp_lb_collector.error_rate)
-        self.registry.register(self.tcp_lb_collector.error_rate_client)
-        self.registry.register(self.tcp_lb_collector.error_rate_upstream)
-        self.registry.register(self.tcp_lb_collector.request_throughput)
-        self.registry.register(self.tcp_lb_collector.response_throughput)
-        self.registry.register(self.tcp_lb_collector.client_rtt)
-        self.registry.register(self.tcp_lb_collector.server_rtt)
-        self.registry.register(self.tcp_lb_collector.collection_success)
-        self.registry.register(self.tcp_lb_collector.collection_duration)
-
-        # UDP Load Balancer metrics
-        self.registry.register(self.udp_lb_collector.request_throughput)
-        self.registry.register(self.udp_lb_collector.response_throughput)
-        self.registry.register(self.udp_lb_collector.client_rtt)
-        self.registry.register(self.udp_lb_collector.server_rtt)
-        self.registry.register(self.udp_lb_collector.collection_success)
-        self.registry.register(self.udp_lb_collector.collection_duration)
+        # Unified Load Balancer metrics (HTTP, TCP, UDP)
+        # HTTP LB metrics
+        self.registry.register(self.lb_collector.http_request_rate)
+        self.registry.register(self.lb_collector.http_request_to_origin_rate)
+        self.registry.register(self.lb_collector.http_error_rate)
+        self.registry.register(self.lb_collector.http_error_rate_4xx)
+        self.registry.register(self.lb_collector.http_error_rate_5xx)
+        self.registry.register(self.lb_collector.http_latency)
+        self.registry.register(self.lb_collector.http_latency_p50)
+        self.registry.register(self.lb_collector.http_latency_p90)
+        self.registry.register(self.lb_collector.http_latency_p99)
+        self.registry.register(self.lb_collector.http_app_latency)
+        self.registry.register(self.lb_collector.http_server_data_transfer_time)
+        self.registry.register(self.lb_collector.http_request_throughput)
+        self.registry.register(self.lb_collector.http_response_throughput)
+        self.registry.register(self.lb_collector.http_client_rtt)
+        self.registry.register(self.lb_collector.http_server_rtt)
+        # TCP LB metrics
+        self.registry.register(self.lb_collector.tcp_connection_rate)
+        self.registry.register(self.lb_collector.tcp_connection_duration)
+        self.registry.register(self.lb_collector.tcp_error_rate)
+        self.registry.register(self.lb_collector.tcp_error_rate_client)
+        self.registry.register(self.lb_collector.tcp_error_rate_upstream)
+        self.registry.register(self.lb_collector.tcp_request_throughput)
+        self.registry.register(self.lb_collector.tcp_response_throughput)
+        self.registry.register(self.lb_collector.tcp_client_rtt)
+        self.registry.register(self.lb_collector.tcp_server_rtt)
+        # UDP LB metrics
+        self.registry.register(self.lb_collector.udp_request_throughput)
+        self.registry.register(self.lb_collector.udp_response_throughput)
+        self.registry.register(self.lb_collector.udp_client_rtt)
+        self.registry.register(self.lb_collector.udp_server_rtt)
+        # Unified collection status metrics
+        self.registry.register(self.lb_collector.collection_success)
+        self.registry.register(self.lb_collector.collection_duration)
+        self.registry.register(self.lb_collector.http_lb_count)
+        self.registry.register(self.lb_collector.tcp_lb_count)
+        self.registry.register(self.lb_collector.udp_lb_count)
 
         # Collection threads
         self.collection_threads: Dict[str, threading.Thread] = {}
@@ -255,38 +250,21 @@ class MetricsServer:
             self.collection_threads["synthetic"] = synthetic_thread
             logger.info("Started synthetic monitoring metrics collection", interval=self.config.f5xc_synthetic_interval)
 
-        # HTTP Load Balancer metrics collection
-        if self.config.f5xc_http_lb_interval > 0:
-            http_lb_thread = threading.Thread(
-                target=self._collect_http_lb_metrics,
-                name="http-lb-collector",
+        # Unified Load Balancer metrics collection (HTTP, TCP, UDP)
+        lb_interval = min(
+            self.config.f5xc_http_lb_interval,
+            self.config.f5xc_tcp_lb_interval,
+            self.config.f5xc_udp_lb_interval
+        )
+        if lb_interval > 0:
+            lb_thread = threading.Thread(
+                target=self._collect_lb_metrics,
+                name="lb-collector",
                 daemon=True
             )
-            http_lb_thread.start()
-            self.collection_threads["http_lb"] = http_lb_thread
-            logger.info("Started HTTP LB metrics collection", interval=self.config.f5xc_http_lb_interval)
-
-        # TCP Load Balancer metrics collection
-        if self.config.f5xc_tcp_lb_interval > 0:
-            tcp_lb_thread = threading.Thread(
-                target=self._collect_tcp_lb_metrics,
-                name="tcp-lb-collector",
-                daemon=True
-            )
-            tcp_lb_thread.start()
-            self.collection_threads["tcp_lb"] = tcp_lb_thread
-            logger.info("Started TCP LB metrics collection", interval=self.config.f5xc_tcp_lb_interval)
-
-        # UDP Load Balancer metrics collection
-        if self.config.f5xc_udp_lb_interval > 0:
-            udp_lb_thread = threading.Thread(
-                target=self._collect_udp_lb_metrics,
-                name="udp-lb-collector",
-                daemon=True
-            )
-            udp_lb_thread.start()
-            self.collection_threads["udp_lb"] = udp_lb_thread
-            logger.info("Started UDP LB metrics collection", interval=self.config.f5xc_udp_lb_interval)
+            lb_thread.start()
+            self.collection_threads["lb"] = lb_thread
+            logger.info("Started unified LB metrics collection (HTTP, TCP, UDP)", interval=lb_interval)
 
     def _start_http_server(self) -> None:
         """Start HTTP server for metrics endpoint."""
@@ -371,52 +349,26 @@ class MetricsServer:
             if self.stop_event.wait(self.config.f5xc_synthetic_interval):
                 break
 
-    def _collect_http_lb_metrics(self) -> None:
-        """Collect HTTP load balancer metrics periodically."""
+    def _collect_lb_metrics(self) -> None:
+        """Collect all load balancer metrics (HTTP, TCP, UDP) periodically."""
+        lb_interval = min(
+            self.config.f5xc_http_lb_interval,
+            self.config.f5xc_tcp_lb_interval,
+            self.config.f5xc_udp_lb_interval
+        )
+
         while not self.stop_event.is_set():
             try:
-                self.http_lb_collector.collect_metrics()
+                self.lb_collector.collect_metrics()
             except Exception as e:
                 logger.error(
-                    "Error in HTTP LB metrics collection",
+                    "Error in LB metrics collection",
                     error=str(e),
                     exc_info=True,
                 )
 
             # Wait for next collection interval
-            if self.stop_event.wait(self.config.f5xc_http_lb_interval):
-                break
-
-    def _collect_tcp_lb_metrics(self) -> None:
-        """Collect TCP load balancer metrics periodically."""
-        while not self.stop_event.is_set():
-            try:
-                self.tcp_lb_collector.collect_metrics()
-            except Exception as e:
-                logger.error(
-                    "Error in TCP LB metrics collection",
-                    error=str(e),
-                    exc_info=True,
-                )
-
-            # Wait for next collection interval
-            if self.stop_event.wait(self.config.f5xc_tcp_lb_interval):
-                break
-
-    def _collect_udp_lb_metrics(self) -> None:
-        """Collect UDP load balancer metrics periodically."""
-        while not self.stop_event.is_set():
-            try:
-                self.udp_lb_collector.collect_metrics()
-            except Exception as e:
-                logger.error(
-                    "Error in UDP LB metrics collection",
-                    error=str(e),
-                    exc_info=True,
-                )
-
-            # Wait for next collection interval
-            if self.stop_event.wait(self.config.f5xc_udp_lb_interval):
+            if self.stop_event.wait(lb_interval):
                 break
 
     def stop(self) -> None:
@@ -448,6 +400,12 @@ class MetricsServer:
             self.config.f5xc_udp_lb_interval
         ) if min(self.config.f5xc_http_lb_interval, self.config.f5xc_tcp_lb_interval, self.config.f5xc_udp_lb_interval) > 0 else 0
 
+        lb_interval = min(
+            self.config.f5xc_http_lb_interval,
+            self.config.f5xc_tcp_lb_interval,
+            self.config.f5xc_udp_lb_interval
+        )
+
         return {
             "config": {
                 "port": self.config.f5xc_exp_http_port,
@@ -455,9 +413,7 @@ class MetricsServer:
                 "service_graph_interval": service_graph_interval,
                 "security_interval": self.config.f5xc_security_interval,
                 "synthetic_interval": self.config.f5xc_synthetic_interval,
-                "http_lb_interval": self.config.f5xc_http_lb_interval,
-                "tcp_lb_interval": self.config.f5xc_tcp_lb_interval,
-                "udp_lb_interval": self.config.f5xc_udp_lb_interval,
+                "lb_interval": lb_interval,
             },
             "threads": {
                 name: thread.is_alive()
