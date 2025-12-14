@@ -79,11 +79,9 @@ class TestMetricsServerIntegration:
                 "udp": []
             }
 
-            # Mock security API calls
+            # Mock security API calls (2 calls per namespace)
             mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
-            mock_client.get_malicious_bot_metrics_for_namespace.return_value = {"data": []}
             mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
-            mock_client.get_security_events_by_country_for_namespace.return_value = {"aggs": {}}
 
             # Mock synthetic monitoring
             mock_client.get_synthetic_monitoring_metrics.return_value = {"monitors": []}
