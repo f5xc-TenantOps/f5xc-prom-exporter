@@ -11,7 +11,6 @@ from prometheus_client import CollectorRegistry, CONTENT_TYPE_LATEST, generate_l
 from .client import F5XCClient
 from .collectors import (
     QuotaCollector,
-    ServiceGraphCollector,
     SecurityCollector,
     SyntheticMonitoringCollector,
     LoadBalancerCollector,
@@ -83,7 +82,6 @@ class MetricsServer:
 
         # Initialize collectors and register them with the registry
         self.quota_collector = QuotaCollector(self.client)
-        self.service_graph_collector = ServiceGraphCollector(self.client)
         self.security_collector = SecurityCollector(self.client)
         self.synthetic_monitoring_collector = SyntheticMonitoringCollector(self.client)
         self.lb_collector = LoadBalancerCollector(self.client)
@@ -95,18 +93,6 @@ class MetricsServer:
         self.registry.register(self.quota_collector.quota_utilization)
         self.registry.register(self.quota_collector.quota_collection_success)
         self.registry.register(self.quota_collector.quota_collection_duration)
-
-        # Service graph metrics
-        self.registry.register(self.service_graph_collector.http_requests_total)
-        self.registry.register(self.service_graph_collector.http_request_duration)
-        self.registry.register(self.service_graph_collector.http_request_size_bytes)
-        self.registry.register(self.service_graph_collector.http_response_size_bytes)
-        self.registry.register(self.service_graph_collector.http_connections_active)
-        self.registry.register(self.service_graph_collector.tcp_connections_total)
-        self.registry.register(self.service_graph_collector.tcp_connections_active)
-        self.registry.register(self.service_graph_collector.tcp_bytes_transmitted)
-        self.registry.register(self.service_graph_collector.service_graph_collection_success)
-        self.registry.register(self.service_graph_collector.service_graph_collection_duration)
 
         # Security metrics
         self.registry.register(self.security_collector.waf_requests_total)
@@ -212,22 +198,6 @@ class MetricsServer:
             self.collection_threads["quota"] = quota_thread
             logger.info("Started quota metrics collection", interval=self.config.f5xc_quota_interval)
 
-        # Service graph metrics collection (combining HTTP/TCP/UDP LB intervals)
-        service_graph_interval = min(
-            self.config.f5xc_http_lb_interval,
-            self.config.f5xc_tcp_lb_interval,
-            self.config.f5xc_udp_lb_interval
-        )
-        if service_graph_interval > 0:
-            service_graph_thread = threading.Thread(
-                target=self._collect_service_graph_metrics,
-                name="service-graph-collector",
-                daemon=True
-            )
-            service_graph_thread.start()
-            self.collection_threads["service_graph"] = service_graph_thread
-            logger.info("Started service graph metrics collection", interval=service_graph_interval)
-
         # Security metrics collection
         if self.config.f5xc_security_interval > 0:
             security_thread = threading.Thread(
@@ -293,28 +263,6 @@ class MetricsServer:
 
             # Wait for next collection interval
             if self.stop_event.wait(self.config.f5xc_quota_interval):
-                break
-
-    def _collect_service_graph_metrics(self) -> None:
-        """Collect service graph metrics periodically."""
-        service_graph_interval = min(
-            self.config.f5xc_http_lb_interval,
-            self.config.f5xc_tcp_lb_interval,
-            self.config.f5xc_udp_lb_interval
-        )
-
-        while not self.stop_event.is_set():
-            try:
-                self.service_graph_collector.collect_metrics()
-            except Exception as e:
-                logger.error(
-                    "Error in service graph metrics collection",
-                    error=str(e),
-                    exc_info=True,
-                )
-
-            # Wait for next collection interval
-            if self.stop_event.wait(service_graph_interval):
                 break
 
     def _collect_security_metrics(self) -> None:
@@ -394,12 +342,6 @@ class MetricsServer:
 
     def get_status(self) -> Dict[str, Any]:
         """Get server status information."""
-        service_graph_interval = min(
-            self.config.f5xc_http_lb_interval,
-            self.config.f5xc_tcp_lb_interval,
-            self.config.f5xc_udp_lb_interval
-        ) if min(self.config.f5xc_http_lb_interval, self.config.f5xc_tcp_lb_interval, self.config.f5xc_udp_lb_interval) > 0 else 0
-
         lb_interval = min(
             self.config.f5xc_http_lb_interval,
             self.config.f5xc_tcp_lb_interval,
@@ -410,7 +352,6 @@ class MetricsServer:
             "config": {
                 "port": self.config.f5xc_exp_http_port,
                 "quota_interval": self.config.f5xc_quota_interval,
-                "service_graph_interval": service_graph_interval,
                 "security_interval": self.config.f5xc_security_interval,
                 "synthetic_interval": self.config.f5xc_synthetic_interval,
                 "lb_interval": lb_interval,

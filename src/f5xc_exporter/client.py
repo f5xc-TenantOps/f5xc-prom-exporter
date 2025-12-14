@@ -133,10 +133,14 @@ class F5XCClient:
         response = self.get(endpoint)
         items = response.get("items", [])
 
-        # Filter out internal namespaces (ves-io-* are F5 internal)
+        # Filter out internal namespaces:
+        # - ves-io-* are F5 internal namespaces
+        # - system namespace returns aggregated data for all namespaces (causes duplicates)
         return [
             item.get("name", "") for item in items
-            if item.get("name") and not item.get("name", "").startswith("ves-io-")
+            if item.get("name")
+            and not item.get("name", "").startswith("ves-io-")
+            and item.get("name") != "system"
         ]
 
     def get_quota_usage(self, namespace: str = "system") -> Dict[str, Any]:

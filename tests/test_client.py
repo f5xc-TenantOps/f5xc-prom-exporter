@@ -328,6 +328,7 @@ class TestF5XCClient:
                     {"name": "default"},
                     {"name": "prod"},
                     {"name": "staging"},
+                    {"name": "system"},  # Should be filtered out (aggregates all namespaces)
                     {"name": "ves-io-system"},  # Should be filtered out
                     {"name": "ves-io-internal"},  # Should be filtered out
                 ]
@@ -338,8 +339,9 @@ class TestF5XCClient:
         client = F5XCClient(test_config)
         result = client.list_namespaces()
 
-        # Should filter out ves-io-* namespaces
+        # Should filter out ves-io-* namespaces and system namespace
         assert result == ["default", "prod", "staging"]
+        assert "system" not in result  # system namespace causes duplicate data
         assert "ves-io-system" not in result
         assert "ves-io-internal" not in result
 

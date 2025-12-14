@@ -6,7 +6,6 @@ from prometheus_client import CollectorRegistry
 
 from f5xc_exporter.collectors import (
     QuotaCollector,
-    ServiceGraphCollector,
     SecurityCollector,
     SyntheticMonitoringCollector,
     LoadBalancerCollector,
@@ -74,51 +73,6 @@ class TestQuotaCollector:
             namespace="system", resource_type="quota", resource_name="load_balancer"
         )
         assert lb_util._value._value == 50.0  # 5/10 * 100
-
-
-class TestServiceGraphCollector:
-    """Test service graph metrics collector."""
-
-    def test_service_graph_collector_initialization(self, mock_client):
-        """Test service graph collector initializes correctly."""
-        collector = ServiceGraphCollector(mock_client)
-
-        assert collector.client == mock_client
-        assert collector.http_requests_total is not None
-        assert collector.http_request_duration is not None
-        assert collector.tcp_connections_total is not None
-
-    def test_service_graph_metrics_collection(self, mock_client, sample_service_graph_response):
-        """Test service graph metrics collection."""
-        mock_client.get_service_graph_data.return_value = sample_service_graph_response
-
-        collector = ServiceGraphCollector(mock_client)
-        collector.collect_metrics("system")
-
-        mock_client.get_service_graph_data.assert_called_once_with("system")
-
-        # Check success metric
-        success_metric = collector.service_graph_collection_success.labels(namespace="system")
-        assert success_metric._value._value == 1
-
-    def test_http_stats_processing(self, mock_client, sample_service_graph_response):
-        """Test HTTP statistics processing with actual F5XC API structure."""
-        mock_client.get_service_graph_data.return_value = sample_service_graph_response
-
-        collector = ServiceGraphCollector(mock_client)
-        collector.collect_metrics("system")
-
-        # Check HTTP request metrics - now using downstream/upstream with metric types
-        requests_downstream = collector.http_requests_total.labels(
-            namespace="system", load_balancer="test-lb", backend="downstream", response_class="total"
-        )
-        assert requests_downstream._value._value == 100.5
-
-        # Check HTTP response latency
-        latency = collector.http_request_duration.labels(
-            namespace="system", load_balancer="test-lb", backend="downstream", percentile="avg"
-        )
-        assert latency._value._value == 0.15
 
 
 class TestSecurityCollector:
@@ -283,63 +237,105 @@ class TestLoadBalancerCollector:
         assert collector.collection_success._value._value == 0
 
     def test_unified_lb_data_processing(self, mock_client, sample_unified_lb_response):
-        """Test unified LB data processing for all LB types."""
+        """Test unified LB data processing for all LB types with direction label."""
         mock_client.get_all_lb_metrics.return_value = sample_unified_lb_response
 
         collector = LoadBalancerCollector(mock_client)
         collector.collect_metrics()
 
-        # Check HTTP LB metrics
-        http_request_rate = collector.http_request_rate.labels(
+        # Check HTTP LB downstream metrics
+        http_request_rate_downstream = collector.http_request_rate.labels(
             namespace="prod",
             load_balancer="app-frontend",
-            site="ce-site-1"
+            site="ce-site-1",
+            direction="downstream"
         )
-        assert http_request_rate._value._value == 150.5
+        assert http_request_rate_downstream._value._value == 150.5
 
-        http_error_rate = collector.http_error_rate.labels(
+        http_error_rate_downstream = collector.http_error_rate.labels(
             namespace="prod",
             load_balancer="app-frontend",
-            site="ce-site-1"
+            site="ce-site-1",
+            direction="downstream"
         )
-        assert http_error_rate._value._value == 2.5
+        assert http_error_rate_downstream._value._value == 2.5
 
-        http_latency = collector.http_latency.labels(
+        http_latency_downstream = collector.http_latency.labels(
             namespace="prod",
             load_balancer="app-frontend",
-            site="ce-site-1"
+            site="ce-site-1",
+            direction="downstream"
         )
-        assert http_latency._value._value == 0.025
+        assert http_latency_downstream._value._value == 0.025
 
-        # Check TCP LB metrics
-        tcp_connection_rate = collector.tcp_connection_rate.labels(
+        # Check HTTP LB upstream metrics
+        http_request_rate_upstream = collector.http_request_rate.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert http_request_rate_upstream._value._value == 120.0
+
+        http_latency_upstream = collector.http_latency.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert http_latency_upstream._value._value == 0.050
+
+        # Check TCP LB downstream metrics
+        tcp_connection_rate_downstream = collector.tcp_connection_rate.labels(
             namespace="prod",
             load_balancer="tcp-backend",
-            site="ce-site-1"
+            site="ce-site-1",
+            direction="downstream"
         )
-        assert tcp_connection_rate._value._value == 50.0
+        assert tcp_connection_rate_downstream._value._value == 50.0
 
-        tcp_error_rate = collector.tcp_error_rate.labels(
+        tcp_error_rate_downstream = collector.tcp_error_rate.labels(
             namespace="prod",
             load_balancer="tcp-backend",
-            site="ce-site-1"
+            site="ce-site-1",
+            direction="downstream"
         )
-        assert tcp_error_rate._value._value == 1.5
+        assert tcp_error_rate_downstream._value._value == 1.5
 
-        # Check UDP LB metrics
-        udp_request_throughput = collector.udp_request_throughput.labels(
+        # Check TCP LB upstream metrics
+        tcp_connection_rate_upstream = collector.tcp_connection_rate.labels(
+            namespace="prod",
+            load_balancer="tcp-backend",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert tcp_connection_rate_upstream._value._value == 45.0
+
+        # Check UDP LB downstream metrics
+        udp_request_throughput_downstream = collector.udp_request_throughput.labels(
             namespace="prod",
             load_balancer="udp-dns-lb",
-            site="ce-site-1"
+            site="ce-site-1",
+            direction="downstream"
         )
-        assert udp_request_throughput._value._value == 100000
+        assert udp_request_throughput_downstream._value._value == 100000
 
-        udp_response_throughput = collector.udp_response_throughput.labels(
+        udp_response_throughput_downstream = collector.udp_response_throughput.labels(
             namespace="prod",
             load_balancer="udp-dns-lb",
-            site="ce-site-1"
+            site="ce-site-1",
+            direction="downstream"
         )
-        assert udp_response_throughput._value._value == 200000
+        assert udp_response_throughput_downstream._value._value == 200000
+
+        # Check UDP LB upstream metrics
+        udp_request_throughput_upstream = collector.udp_request_throughput.labels(
+            namespace="prod",
+            load_balancer="udp-dns-lb",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert udp_request_throughput_upstream._value._value == 95000
 
     def test_lb_empty_response(self, mock_client):
         """Test LB collector handles empty response gracefully."""
@@ -400,9 +396,8 @@ class TestCollectorIntegration:
         # Create a custom registry for testing
         registry = CollectorRegistry()
 
-        # Create collectors
+        # Create collectors (matching what MetricsServer uses)
         quota_collector = QuotaCollector(mock_client)
-        service_graph_collector = ServiceGraphCollector(mock_client)
         security_collector = SecurityCollector(mock_client)
         synthetic_collector = SyntheticMonitoringCollector(mock_client)
         lb_collector = LoadBalancerCollector(mock_client)
@@ -413,12 +408,6 @@ class TestCollectorIntegration:
         registry.register(quota_collector.quota_utilization)
         registry.register(quota_collector.quota_collection_success)
         registry.register(quota_collector.quota_collection_duration)
-
-        registry.register(service_graph_collector.http_requests_total)
-        registry.register(service_graph_collector.http_request_duration)
-        registry.register(service_graph_collector.tcp_connections_total)
-        registry.register(service_graph_collector.service_graph_collection_success)
-        registry.register(service_graph_collector.service_graph_collection_duration)
 
         registry.register(security_collector.waf_requests_total)
         registry.register(security_collector.bot_requests_total)
@@ -455,7 +444,6 @@ class TestCollectorIntegration:
         # Test that metrics output contains expected metric names
         metrics_str = metrics_output.decode('utf-8')
         assert 'f5xc_quota_limit' in metrics_str
-        assert 'f5xc_http_requests_total' in metrics_str  # Service graph HTTP metric
         assert 'f5xc_security_collection_success' in metrics_str
         assert 'f5xc_synthetic_collection_success' in metrics_str
         # Unified LB metrics

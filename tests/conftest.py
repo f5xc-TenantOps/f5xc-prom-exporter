@@ -56,7 +56,7 @@ def mock_client(test_config):
 
 @pytest.fixture
 def sample_unified_lb_response():
-    """Sample unified LB metrics API response - contains HTTP, TCP, and UDP LBs."""
+    """Sample unified LB metrics API response - contains HTTP, TCP, and UDP LBs with upstream/downstream."""
     return {
         "data": {
             "nodes": [
@@ -76,6 +76,13 @@ def sample_unified_lb_response():
                                 {"type": "HTTP_RESPONSE_LATENCY", "value": {"raw": [{"timestamp": 1234567890, "value": 0.025}]}},
                                 {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 1000000}]}},
                                 {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.010}]}},
+                            ],
+                            "upstream": [
+                                {"type": "HTTP_REQUEST_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 120.0}]}},
+                                {"type": "HTTP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 1.0}]}},
+                                {"type": "HTTP_RESPONSE_LATENCY", "value": {"raw": [{"timestamp": 1234567890, "value": 0.050}]}},
+                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 800000}]}},
+                                {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.015}]}},
                             ]
                         }
                     }
@@ -95,6 +102,12 @@ def sample_unified_lb_response():
                                 {"type": "TCP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 1.5}]}},
                                 {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 500000}]}},
                                 {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.008}]}},
+                            ],
+                            "upstream": [
+                                {"type": "TCP_CONNECTION_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 45.0}]}},
+                                {"type": "TCP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 0.5}]}},
+                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 450000}]}},
+                                {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.012}]}},
                             ]
                         }
                     }
@@ -113,6 +126,11 @@ def sample_unified_lb_response():
                                 {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 100000}]}},
                                 {"type": "RESPONSE_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 200000}]}},
                                 {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.005}]}},
+                            ],
+                            "upstream": [
+                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 95000}]}},
+                                {"type": "RESPONSE_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 190000}]}},
+                                {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.008}]}},
                             ]
                         }
                     }

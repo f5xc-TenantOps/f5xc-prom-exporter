@@ -60,7 +60,7 @@ class LoadBalancerCollector:
         self.client = client
 
         # Common labels for all metrics
-        labels = ["namespace", "load_balancer", "site"]
+        labels = ["namespace", "load_balancer", "site", "direction"]
 
         # --- HTTP LB Metrics ---
         self.http_request_rate = Gauge(
@@ -322,11 +322,16 @@ class LoadBalancerCollector:
         # Extract metrics from node data
         node_data = node.get("data", {})
         metric_data = node_data.get("metric", {})
-        downstream_metrics = metric_data.get("downstream", [])
 
-        # Process metrics based on LB type
+        # Process downstream metrics (client -> LB)
+        downstream_metrics = metric_data.get("downstream", [])
         for metric in downstream_metrics:
-            self._process_metric(metric, namespace, vhost, site, virtual_host_type)
+            self._process_metric(metric, namespace, vhost, site, virtual_host_type, "downstream")
+
+        # Process upstream metrics (LB -> origin)
+        upstream_metrics = metric_data.get("upstream", [])
+        for metric in upstream_metrics:
+            self._process_metric(metric, namespace, vhost, site, virtual_host_type, "upstream")
 
         return virtual_host_type
 
@@ -336,7 +341,8 @@ class LoadBalancerCollector:
         namespace: str,
         load_balancer: str,
         site: str,
-        lb_type: str
+        lb_type: str,
+        direction: str
     ) -> None:
         """Process a single metric and update the corresponding Prometheus gauge."""
         metric_type = metric.get("type", "")
@@ -370,7 +376,8 @@ class LoadBalancerCollector:
             gauge.labels(
                 namespace=namespace,
                 load_balancer=load_balancer,
-                site=site
+                site=site,
+                direction=direction
             ).set(value)
 
     def _get_gauge_for_metric(self, metric_type: str, lb_type: str) -> Optional[Gauge]:
