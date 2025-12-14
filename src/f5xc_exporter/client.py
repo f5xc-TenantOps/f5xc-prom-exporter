@@ -251,6 +251,62 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
+    def get_http_lb_metrics(self, step_seconds: int = 120) -> Dict[str, Any]:
+        """Get HTTP load balancer metrics across all namespaces.
+
+        Uses QueryAllNamespaces API: /api/data/namespaces/system/graph/all_ns_service
+        Returns metrics for all HTTP load balancers across all namespaces in a single call.
+
+        Args:
+            step_seconds: Time step for metrics aggregation (default: 120s)
+
+        Returns:
+            Response containing nodes with HTTP LB metrics grouped by namespace, vhost, and site
+        """
+        endpoint = "/api/data/namespaces/system/graph/all_ns_service"
+
+        end_time = int(time.time())
+        start_time = end_time - step_seconds
+
+        payload = {
+            "field_selector": {
+                "node": {
+                    "metric": {
+                        "downstream": [
+                            "HTTP_REQUEST_RATE",
+                            "HTTP_ERROR_RATE",
+                            "HTTP_ERROR_RATE_4XX",
+                            "HTTP_ERROR_RATE_5XX",
+                            "HTTP_RESPONSE_LATENCY",
+                            "HTTP_RESPONSE_LATENCY_PERCENTILE_50",
+                            "HTTP_RESPONSE_LATENCY_PERCENTILE_90",
+                            "HTTP_RESPONSE_LATENCY_PERCENTILE_99",
+                            "HTTP_APP_LATENCY",
+                            "HTTP_SERVER_DATA_TRANSFER_TIME",
+                            "REQUEST_THROUGHPUT",
+                            "RESPONSE_THROUGHPUT",
+                            "CLIENT_RTT",
+                            "SERVER_RTT",
+                            "REQUEST_TO_ORIGIN_RATE"
+                        ]
+                    }
+                }
+            },
+            "step": f"{step_seconds}s",
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            "label_filter": [
+                {
+                    "label": "LABEL_VHOST_TYPE",
+                    "op": "EQ",
+                    "value": "HTTP_LOAD_BALANCER"
+                }
+            ],
+            "group_by": ["NAMESPACE", "VHOST", "SITE"]
+        }
+
+        return self.post(endpoint, json=payload)
+
     def close(self) -> None:
         """Close the session."""
         self.session.close()

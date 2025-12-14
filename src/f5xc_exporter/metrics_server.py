@@ -13,7 +13,8 @@ from .collectors import (
     QuotaCollector,
     ServiceGraphCollector,
     SecurityCollector,
-    SyntheticMonitoringCollector
+    SyntheticMonitoringCollector,
+    HttpLoadBalancerCollector,
 )
 from .config import Config
 
@@ -85,6 +86,7 @@ class MetricsServer:
         self.service_graph_collector = ServiceGraphCollector(self.client)
         self.security_collector = SecurityCollector(self.client)
         self.synthetic_monitoring_collector = SyntheticMonitoringCollector(self.client)
+        self.http_lb_collector = HttpLoadBalancerCollector(self.client)
 
         # Register individual metrics with Prometheus registry
         # Quota metrics
@@ -140,6 +142,25 @@ class MetricsServer:
         self.registry.register(self.synthetic_monitoring_collector.synthetic_uptime_percentage)
         self.registry.register(self.synthetic_monitoring_collector.synthetic_collection_success)
         self.registry.register(self.synthetic_monitoring_collector.synthetic_collection_duration)
+
+        # HTTP Load Balancer metrics
+        self.registry.register(self.http_lb_collector.request_rate)
+        self.registry.register(self.http_lb_collector.request_to_origin_rate)
+        self.registry.register(self.http_lb_collector.error_rate)
+        self.registry.register(self.http_lb_collector.error_rate_4xx)
+        self.registry.register(self.http_lb_collector.error_rate_5xx)
+        self.registry.register(self.http_lb_collector.latency)
+        self.registry.register(self.http_lb_collector.latency_p50)
+        self.registry.register(self.http_lb_collector.latency_p90)
+        self.registry.register(self.http_lb_collector.latency_p99)
+        self.registry.register(self.http_lb_collector.app_latency)
+        self.registry.register(self.http_lb_collector.server_data_transfer_time)
+        self.registry.register(self.http_lb_collector.request_throughput)
+        self.registry.register(self.http_lb_collector.response_throughput)
+        self.registry.register(self.http_lb_collector.client_rtt)
+        self.registry.register(self.http_lb_collector.server_rtt)
+        self.registry.register(self.http_lb_collector.collection_success)
+        self.registry.register(self.http_lb_collector.collection_duration)
 
         # Collection threads
         self.collection_threads: Dict[str, threading.Thread] = {}
@@ -208,6 +229,17 @@ class MetricsServer:
             synthetic_thread.start()
             self.collection_threads["synthetic"] = synthetic_thread
             logger.info("Started synthetic monitoring metrics collection", interval=self.config.f5xc_synthetic_interval)
+
+        # HTTP Load Balancer metrics collection
+        if self.config.f5xc_http_lb_interval > 0:
+            http_lb_thread = threading.Thread(
+                target=self._collect_http_lb_metrics,
+                name="http-lb-collector",
+                daemon=True
+            )
+            http_lb_thread.start()
+            self.collection_threads["http_lb"] = http_lb_thread
+            logger.info("Started HTTP LB metrics collection", interval=self.config.f5xc_http_lb_interval)
 
     def _start_http_server(self) -> None:
         """Start HTTP server for metrics endpoint."""
@@ -292,6 +324,22 @@ class MetricsServer:
             if self.stop_event.wait(self.config.f5xc_synthetic_interval):
                 break
 
+    def _collect_http_lb_metrics(self) -> None:
+        """Collect HTTP load balancer metrics periodically."""
+        while not self.stop_event.is_set():
+            try:
+                self.http_lb_collector.collect_metrics()
+            except Exception as e:
+                logger.error(
+                    "Error in HTTP LB metrics collection",
+                    error=str(e),
+                    exc_info=True,
+                )
+
+            # Wait for next collection interval
+            if self.stop_event.wait(self.config.f5xc_http_lb_interval):
+                break
+
     def stop(self) -> None:
         """Stop the metrics server and collection threads."""
         logger.info("Stopping F5XC Prometheus exporter")
@@ -328,6 +376,7 @@ class MetricsServer:
                 "service_graph_interval": service_graph_interval,
                 "security_interval": self.config.f5xc_security_interval,
                 "synthetic_interval": self.config.f5xc_synthetic_interval,
+                "http_lb_interval": self.config.f5xc_http_lb_interval,
             },
             "threads": {
                 name: thread.is_alive()

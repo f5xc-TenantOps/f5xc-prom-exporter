@@ -8,7 +8,8 @@ from f5xc_exporter.collectors import (
     QuotaCollector,
     ServiceGraphCollector,
     SecurityCollector,
-    SyntheticMonitoringCollector
+    SyntheticMonitoringCollector,
+    HttpLoadBalancerCollector,
 )
 from f5xc_exporter.client import F5XCAPIError
 
@@ -219,6 +220,217 @@ class TestSyntheticMonitoringCollector:
         assert response_time._value._value == 0.15
 
 
+class TestHttpLoadBalancerCollector:
+    """Test HTTP load balancer metrics collector."""
+
+    def test_http_lb_collector_initialization(self, mock_client):
+        """Test HTTP LB collector initializes correctly."""
+        collector = HttpLoadBalancerCollector(mock_client)
+
+        assert collector.client == mock_client
+        # Request metrics
+        assert collector.request_rate is not None
+        assert collector.request_to_origin_rate is not None
+        # Error metrics
+        assert collector.error_rate is not None
+        assert collector.error_rate_4xx is not None
+        assert collector.error_rate_5xx is not None
+        # Latency metrics
+        assert collector.latency is not None
+        assert collector.latency_p50 is not None
+        assert collector.latency_p90 is not None
+        assert collector.latency_p99 is not None
+        assert collector.app_latency is not None
+        assert collector.server_data_transfer_time is not None
+        # Throughput metrics
+        assert collector.request_throughput is not None
+        assert collector.response_throughput is not None
+        # RTT metrics
+        assert collector.client_rtt is not None
+        assert collector.server_rtt is not None
+        # Collection status
+        assert collector.collection_success is not None
+        assert collector.collection_duration is not None
+
+    def test_http_lb_metrics_collection_success(self, mock_client, sample_http_lb_response):
+        """Test successful HTTP LB metrics collection."""
+        mock_client.get_http_lb_metrics.return_value = sample_http_lb_response
+
+        collector = HttpLoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        mock_client.get_http_lb_metrics.assert_called_once()
+
+        # Check that success metric is set
+        assert collector.collection_success._value._value == 1
+
+    def test_http_lb_metrics_collection_failure(self, mock_client):
+        """Test HTTP LB metrics collection failure handling."""
+        mock_client.get_http_lb_metrics.side_effect = F5XCAPIError("API Error")
+
+        collector = HttpLoadBalancerCollector(mock_client)
+
+        with pytest.raises(F5XCAPIError):
+            collector.collect_metrics()
+
+        # Check that failure metric is set
+        assert collector.collection_success._value._value == 0
+
+    def test_http_lb_data_processing_multi_namespace(self, mock_client, sample_http_lb_response):
+        """Test HTTP LB data processing with multiple namespaces."""
+        mock_client.get_http_lb_metrics.return_value = sample_http_lb_response
+
+        collector = HttpLoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        # Check first node (prod namespace, app-frontend LB, ce-site-1)
+        request_rate_prod = collector.request_rate.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert request_rate_prod._value._value == 150.5
+
+        error_rate_prod = collector.error_rate.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert error_rate_prod._value._value == 2.5
+
+        latency_prod = collector.latency.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert latency_prod._value._value == 0.025
+
+        # Check second node (staging namespace, api-gateway LB, ce-site-2)
+        request_rate_staging = collector.request_rate.labels(
+            namespace="staging",
+            load_balancer="api-gateway",
+            site="ce-site-2"
+        )
+        assert request_rate_staging._value._value == 50.0
+
+        latency_staging = collector.latency.labels(
+            namespace="staging",
+            load_balancer="api-gateway",
+            site="ce-site-2"
+        )
+        assert latency_staging._value._value == 0.030
+
+    def test_http_lb_latency_percentiles_processing(self, mock_client, sample_http_lb_response):
+        """Test HTTP LB latency percentiles are processed correctly."""
+        mock_client.get_http_lb_metrics.return_value = sample_http_lb_response
+
+        collector = HttpLoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        # Check percentile metrics for prod namespace
+        latency_p50 = collector.latency_p50.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert latency_p50._value._value == 0.020
+
+        latency_p90 = collector.latency_p90.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert latency_p90._value._value == 0.050
+
+        latency_p99 = collector.latency_p99.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert latency_p99._value._value == 0.100
+
+    def test_http_lb_throughput_and_rtt_processing(self, mock_client, sample_http_lb_response):
+        """Test HTTP LB throughput and RTT metrics are processed correctly."""
+        mock_client.get_http_lb_metrics.return_value = sample_http_lb_response
+
+        collector = HttpLoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        # Check throughput metrics
+        request_throughput = collector.request_throughput.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert request_throughput._value._value == 1000000
+
+        response_throughput = collector.response_throughput.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert response_throughput._value._value == 5000000
+
+        # Check RTT metrics
+        client_rtt = collector.client_rtt.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert client_rtt._value._value == 0.010
+
+        server_rtt = collector.server_rtt.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1"
+        )
+        assert server_rtt._value._value == 0.005
+
+    def test_http_lb_empty_response(self, mock_client):
+        """Test HTTP LB collector handles empty response gracefully."""
+        mock_client.get_http_lb_metrics.return_value = {"data": {"nodes": []}}
+
+        collector = HttpLoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        # Should succeed even with empty data
+        assert collector.collection_success._value._value == 1
+
+    def test_http_lb_missing_vhost_skipped(self, mock_client):
+        """Test nodes without vhost are skipped."""
+        mock_client.get_http_lb_metrics.return_value = {
+            "data": {
+                "nodes": [
+                    {
+                        "id": {
+                            "namespace": "test",
+                            # vhost missing - should be skipped
+                            "site": "site-1"
+                        },
+                        "data": {
+                            "metric": {
+                                "downstream": [
+                                    {
+                                        "type": "HTTP_REQUEST_RATE",
+                                        "value": {
+                                            "raw": [{"timestamp": 123, "value": 100}]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+
+        collector = HttpLoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        # Should succeed but not set any metrics for this node
+        assert collector.collection_success._value._value == 1
+
+
 class TestCollectorIntegration:
     """Test collector integration scenarios."""
 
@@ -234,6 +446,7 @@ class TestCollectorIntegration:
         service_graph_collector = ServiceGraphCollector(mock_client)
         security_collector = SecurityCollector(mock_client)
         synthetic_collector = SyntheticMonitoringCollector(mock_client)
+        http_lb_collector = HttpLoadBalancerCollector(mock_client)
 
         # Register individual metrics with registry (like MetricsServer does)
         registry.register(quota_collector.quota_limit)
@@ -261,6 +474,13 @@ class TestCollectorIntegration:
         registry.register(synthetic_collector.synthetic_collection_success)
         registry.register(synthetic_collector.synthetic_collection_duration)
 
+        # HTTP LB metrics
+        registry.register(http_lb_collector.request_rate)
+        registry.register(http_lb_collector.error_rate)
+        registry.register(http_lb_collector.latency)
+        registry.register(http_lb_collector.collection_success)
+        registry.register(http_lb_collector.collection_duration)
+
         # Test that metrics can be generated (this would have caught the bug)
         metrics_output = generate_latest(registry)
         assert metrics_output is not None
@@ -272,6 +492,8 @@ class TestCollectorIntegration:
         assert 'f5xc_http_requests_total' in metrics_str  # Service graph HTTP metric
         assert 'f5xc_security_collection_success' in metrics_str
         assert 'f5xc_synthetic_collection_success' in metrics_str
+        assert 'f5xc_http_lb_request_rate' in metrics_str
+        assert 'f5xc_http_lb_collection_success' in metrics_str
 
     def test_collector_error_handling(self, mock_client):
         """Test collector error handling doesn't crash."""

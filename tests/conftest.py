@@ -42,6 +42,7 @@ def mock_client(test_config):
         client.get_synthetic_monitoring_health = Mock()
         client.get_synthetic_monitoring_summary = Mock()
         client.get_http_monitors_health = Mock()
+        client.get_http_lb_metrics = Mock()
 
         yield client
 
@@ -169,6 +170,134 @@ def sample_synthetic_summary_response():
         "monitors": [
             {"name": "test-monitor", "uptime": 99.5}
         ]
+    }
+
+
+@pytest.fixture
+def sample_http_lb_response():
+    """Sample HTTP LB metrics API response - matches QueryAllNamespaces structure."""
+    return {
+        "data": {
+            "nodes": [
+                {
+                    "id": {
+                        "namespace": "prod",
+                        "vhost": "app-frontend",
+                        "site": "ce-site-1"
+                    },
+                    "data": {
+                        "metric": {
+                            "downstream": [
+                                {
+                                    "type": "HTTP_REQUEST_RATE",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 150.5}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_ERROR_RATE",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 2.5}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_ERROR_RATE_4XX",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 1.5}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_ERROR_RATE_5XX",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 1.0}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_RESPONSE_LATENCY",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.025}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_RESPONSE_LATENCY_PERCENTILE_50",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.020}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_RESPONSE_LATENCY_PERCENTILE_90",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.050}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_RESPONSE_LATENCY_PERCENTILE_99",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.100}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_APP_LATENCY",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.015}]
+                                    }
+                                },
+                                {
+                                    "type": "REQUEST_THROUGHPUT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 1000000}]
+                                    }
+                                },
+                                {
+                                    "type": "RESPONSE_THROUGHPUT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 5000000}]
+                                    }
+                                },
+                                {
+                                    "type": "CLIENT_RTT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.010}]
+                                    }
+                                },
+                                {
+                                    "type": "SERVER_RTT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.005}]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "id": {
+                        "namespace": "staging",
+                        "vhost": "api-gateway",
+                        "site": "ce-site-2"
+                    },
+                    "data": {
+                        "metric": {
+                            "downstream": [
+                                {
+                                    "type": "HTTP_REQUEST_RATE",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 50.0}]
+                                    }
+                                },
+                                {
+                                    "type": "HTTP_RESPONSE_LATENCY",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.030}]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            ],
+            "edges": []
+        }
     }
 
 
