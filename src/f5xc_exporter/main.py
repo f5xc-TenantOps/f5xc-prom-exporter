@@ -1,7 +1,9 @@
 """Main entry point for F5XC Prometheus exporter."""
 
+import logging
 import signal
 import sys
+from typing import Any
 
 import structlog
 
@@ -30,7 +32,6 @@ def setup_logging(log_level: str) -> None:
     )
 
     # Set log level
-    import logging
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
@@ -43,8 +44,7 @@ def main() -> None:
     # Load configuration
     try:
         config = get_config()
-    except Exception as e:
-        print(f"Failed to load configuration: {e}", file=sys.stderr)
+    except Exception:
         sys.exit(1)
 
     # Setup logging
@@ -62,7 +62,7 @@ def main() -> None:
     server = MetricsServer(config)
 
     # Handle shutdown signals
-    def signal_handler(signum: int, frame: any) -> None:
+    def signal_handler(signum: int, frame: Any) -> None:
         logger.info("Received shutdown signal", signal=signum)
         server.stop()
         sys.exit(0)
@@ -72,6 +72,10 @@ def main() -> None:
 
     try:
         server.start()
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt, shutting down")
+        server.stop()
+        sys.exit(0)
     except Exception as e:
         logger.error("Failed to start metrics server", error=str(e), exc_info=True)
         sys.exit(1)

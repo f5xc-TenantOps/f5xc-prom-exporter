@@ -1,16 +1,17 @@
 """Tests for metric collectors."""
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import Mock, patch
 from prometheus_client import CollectorRegistry
 
+from f5xc_exporter.client import F5XCAPIError
 from f5xc_exporter.collectors import (
+    LoadBalancerCollector,
     QuotaCollector,
     SecurityCollector,
     SyntheticMonitoringCollector,
-    LoadBalancerCollector,
 )
-from f5xc_exporter.client import F5XCAPIError
 
 
 class TestQuotaCollector:
@@ -83,37 +84,257 @@ class TestSecurityCollector:
         collector = SecurityCollector(mock_client)
 
         assert collector.client == mock_client
-        assert collector.waf_requests_total is not None
-        assert collector.bot_requests_total is not None
-        assert collector.security_events_total is not None
+        # App Firewall metrics (API 1)
+        assert collector.total_requests is not None
+        assert collector.attacked_requests is not None
+        assert collector.bot_detections is not None
+        assert collector.malicious_bot_detections is not None
+        # Security event counts (API 2)
+        assert collector.waf_events is not None
+        assert collector.bot_defense_events is not None
+        assert collector.api_events is not None
+        assert collector.service_policy_events is not None
+        assert collector.malicious_user_events is not None
+        assert collector.dos_events is not None
+        # Collection status
+        assert collector.collection_success is not None
+        assert collector.collection_duration is not None
 
-    @patch.object(SecurityCollector, '_collect_waf_metrics')
-    @patch.object(SecurityCollector, '_collect_bot_defense_metrics')
-    @patch.object(SecurityCollector, '_collect_api_security_metrics')
-    @patch.object(SecurityCollector, '_collect_ddos_metrics')
-    @patch.object(SecurityCollector, '_collect_security_events')
-    def test_security_metrics_collection_calls_all_methods(
-        self, mock_events, mock_ddos, mock_api, mock_bot, mock_waf, mock_client
+    def test_security_metrics_collection_success(
+        self,
+        mock_client,
+        sample_app_firewall_metrics_response,
+        sample_malicious_bot_metrics_response,
+        sample_security_events_aggregation_response,
+        sample_malicious_user_events_response,
+        sample_dos_events_response,
+        sample_country_attack_sources_response
     ):
-        """Test that security collection calls all sub-methods."""
-        collector = SecurityCollector(mock_client)
-        collector.collect_metrics("system")
-
-        mock_waf.assert_called_once_with("system")
-        mock_bot.assert_called_once_with("system")
-        mock_api.assert_called_once_with("system")
-        mock_ddos.assert_called_once_with("system")
-        mock_events.assert_called_once_with("system")
-
-    def test_waf_data_processing(self, mock_client, sample_security_response):
-        """Test WAF data processing with new API methods."""
-        mock_client.get_app_firewall_metrics.return_value = sample_security_response
+        """Test successful security metrics collection."""
+        mock_client.list_namespaces.return_value = ["demo-shop"]
+        mock_client.get_app_firewall_metrics_for_namespace.return_value = sample_app_firewall_metrics_response
+        mock_client.get_malicious_bot_metrics_for_namespace.return_value = sample_malicious_bot_metrics_response
+        mock_client.get_security_event_counts_for_namespace.side_effect = [
+            sample_security_events_aggregation_response,  # Main security events
+            sample_malicious_user_events_response,  # Malicious user events
+            sample_dos_events_response  # DoS events
+        ]
+        mock_client.get_security_events_by_country_for_namespace.return_value = sample_country_attack_sources_response
 
         collector = SecurityCollector(mock_client)
-        collector._collect_waf_metrics("system")
+        collector.collect_metrics()
 
-        # Verify new API method was called
-        mock_client.get_app_firewall_metrics.assert_called_once_with("system")
+        # Verify success
+        assert collector.collection_success._value._value == 1
+
+        # Verify API calls
+        mock_client.list_namespaces.assert_called_once()
+        mock_client.get_app_firewall_metrics_for_namespace.assert_called_once_with("demo-shop")
+        mock_client.get_malicious_bot_metrics_for_namespace.assert_called_once_with("demo-shop")
+
+    def test_app_firewall_metrics_processing(
+        self,
+        mock_client,
+        sample_app_firewall_metrics_response
+    ):
+        """Test app firewall metrics processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_app_firewall_response(sample_app_firewall_metrics_response, "demo-shop")
+
+        # Check total requests
+        total_requests = collector.total_requests.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert total_requests._value._value == 13442.0
+
+        # Check attacked requests
+        attacked_requests = collector.attacked_requests.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert attacked_requests._value._value == 25.0
+
+        # Check bot detections
+        bot_detections = collector.bot_detections.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert bot_detections._value._value == 18.0
+
+    def test_malicious_bot_metrics_processing(
+        self,
+        mock_client,
+        sample_malicious_bot_metrics_response
+    ):
+        """Test malicious bot metrics processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_malicious_bot_response(sample_malicious_bot_metrics_response, "demo-shop")
+
+        # Check malicious bot detections
+        malicious_bots = collector.malicious_bot_detections.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert malicious_bots._value._value == 5.0
+
+    def test_security_events_aggregation_processing(
+        self,
+        mock_client,
+        sample_security_events_aggregation_response
+    ):
+        """Test security events aggregation processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_event_aggregation(sample_security_events_aggregation_response, "demo-shop")
+
+        # Check WAF events
+        waf_events = collector.waf_events.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert waf_events._value._value == 20.0
+
+        # Check bot defense events
+        bot_defense_events = collector.bot_defense_events.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert bot_defense_events._value._value == 15.0
+
+        # Check API events
+        api_events = collector.api_events.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert api_events._value._value == 5.0
+
+        # Check service policy events
+        svc_policy_events = collector.service_policy_events.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert svc_policy_events._value._value == 2.0
+
+    def test_malicious_user_events_processing(
+        self,
+        mock_client,
+        sample_malicious_user_events_response
+    ):
+        """Test malicious user events processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_malicious_user_aggregation(sample_malicious_user_events_response, "demo-shop")
+
+        malicious_user_events = collector.malicious_user_events.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert malicious_user_events._value._value == 3.0
+
+    def test_dos_events_processing(
+        self,
+        mock_client,
+        sample_dos_events_response
+    ):
+        """Test DoS events processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_dos_aggregation(sample_dos_events_response, "demo-shop")
+
+        dos_events = collector.dos_events.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert dos_events._value._value == 7.0
+
+    def test_security_collection_failure(self, mock_client):
+        """Test security metrics collection failure handling."""
+        from f5xc_exporter.client import F5XCAPIError
+
+        mock_client.list_namespaces.side_effect = F5XCAPIError("API Error")
+
+        collector = SecurityCollector(mock_client)
+
+        with pytest.raises(F5XCAPIError):
+            collector.collect_metrics()
+
+        # Check that failure metric is set
+        assert collector.collection_success._value._value == 0
+
+    def test_country_events_processing(
+        self,
+        mock_client,
+        sample_country_attack_sources_response
+    ):
+        """Test events by country processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_country_aggregation(sample_country_attack_sources_response, "demo-shop")
+
+        # Check Germany events
+        de_events = collector.events_by_country.labels(
+            namespace="demo-shop",
+            country="DE"
+        )
+        assert de_events._value._value == 1200.0
+
+        # Check US events
+        us_events = collector.events_by_country.labels(
+            namespace="demo-shop",
+            country="US"
+        )
+        assert us_events._value._value == 250.0
+
+        # Check China events
+        cn_events = collector.events_by_country.labels(
+            namespace="demo-shop",
+            country="CN"
+        )
+        assert cn_events._value._value == 67.0
+
+    def test_attack_sources_processing(
+        self,
+        mock_client,
+        sample_country_attack_sources_response
+    ):
+        """Test top attack sources processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_attack_sources_aggregation(sample_country_attack_sources_response, "demo-shop")
+
+        # Check top attack source from Germany
+        de_source = collector.top_attack_sources.labels(
+            namespace="demo-shop",
+            country="DE",
+            src_ip="188.68.49.235"
+        )
+        assert de_source._value._value == 1000.0
+
+        # Check attack source from US
+        us_source = collector.top_attack_sources.labels(
+            namespace="demo-shop",
+            country="US",
+            src_ip="45.33.32.156"
+        )
+        assert us_source._value._value == 200.0
+
+        # Check second attack source from Germany
+        de_source2 = collector.top_attack_sources.labels(
+            namespace="demo-shop",
+            country="DE",
+            src_ip="95.217.163.246"
+        )
+        assert de_source2._value._value == 150.0
+
+    def test_security_empty_response_handling(self, mock_client):
+        """Test security collector handles empty responses gracefully."""
+        mock_client.list_namespaces.return_value = ["demo-shop"]
+        mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
+        mock_client.get_malicious_bot_metrics_for_namespace.return_value = {"data": []}
+        mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
+        mock_client.get_security_events_by_country_for_namespace.return_value = {"aggs": {}}
+
+        collector = SecurityCollector(mock_client)
+        collector.collect_metrics()
+
+        # Should succeed even with empty data
+        assert collector.collection_success._value._value == 1
 
 
 class TestSyntheticMonitoringCollector:
@@ -409,11 +630,21 @@ class TestCollectorIntegration:
         registry.register(quota_collector.quota_collection_success)
         registry.register(quota_collector.quota_collection_duration)
 
-        registry.register(security_collector.waf_requests_total)
-        registry.register(security_collector.bot_requests_total)
-        registry.register(security_collector.security_events_total)
-        registry.register(security_collector.security_collection_success)
-        registry.register(security_collector.security_collection_duration)
+        # Security metrics - App Firewall (API 1)
+        registry.register(security_collector.total_requests)
+        registry.register(security_collector.attacked_requests)
+        registry.register(security_collector.bot_detections)
+        registry.register(security_collector.malicious_bot_detections)
+        # Security metrics - Event Counts (API 2)
+        registry.register(security_collector.waf_events)
+        registry.register(security_collector.bot_defense_events)
+        registry.register(security_collector.api_events)
+        registry.register(security_collector.service_policy_events)
+        registry.register(security_collector.malicious_user_events)
+        registry.register(security_collector.dos_events)
+        # Security collection status
+        registry.register(security_collector.collection_success)
+        registry.register(security_collector.collection_duration)
 
         registry.register(synthetic_collector.http_check_success)
         registry.register(synthetic_collector.dns_check_success)

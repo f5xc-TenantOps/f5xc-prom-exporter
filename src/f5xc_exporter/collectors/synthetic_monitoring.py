@@ -1,12 +1,12 @@
 """Synthetic monitoring metrics collector for F5XC."""
 
-from typing import Any, Dict, List, Optional
 import time
+from typing import Any
 
 import structlog
-from prometheus_client import Gauge, Counter
+from prometheus_client import Counter, Gauge
 
-from ..client import F5XCClient, F5XCAPIError
+from ..client import F5XCAPIError, F5XCClient
 
 logger = structlog.get_logger()
 
@@ -179,7 +179,7 @@ class SyntheticMonitoringCollector:
             self.synthetic_collection_success.labels(namespace=namespace).set(0)
             raise
 
-    def _process_health_data(self, data: Dict[str, Any], namespace: str) -> None:
+    def _process_health_data(self, data: dict[str, Any], namespace: str) -> None:
         """Process synthetic monitoring health data from the correct API."""
         logger.debug("Processing synthetic monitoring health data", namespace=namespace, keys=list(data.keys()))
 
@@ -209,7 +209,7 @@ class SyntheticMonitoringCollector:
                     target_domain=monitor.get("target", monitor.get("domain", "unknown"))
                 ).set(1 if is_healthy else 0)
 
-    def _process_http_monitors_health(self, data: Dict[str, Any], namespace: str) -> None:
+    def _process_http_monitors_health(self, data: dict[str, Any], namespace: str) -> None:
         """Process HTTP monitors health data from the correct API."""
         logger.debug("Processing HTTP monitors health data", namespace=namespace, keys=list(data.keys()))
 
@@ -246,14 +246,14 @@ class SyntheticMonitoringCollector:
                 except (ValueError, TypeError):
                     pass
 
-    def _process_summary_data(self, data: Dict[str, Any], namespace: str) -> None:
+    def _process_summary_data(self, data: dict[str, Any], namespace: str) -> None:
         """Process synthetic monitoring global summary data."""
         logger.debug("Processing synthetic monitoring summary data", namespace=namespace, keys=list(data.keys()))
 
         # Extract summary statistics
         total_monitors = data.get("total_monitors", data.get("count", 0))
         healthy_monitors = data.get("healthy_monitors", data.get("healthy", 0))
-        unhealthy_monitors = data.get("unhealthy_monitors", data.get("unhealthy", 0))
+        data.get("unhealthy_monitors", data.get("unhealthy", 0))
 
         # Calculate uptime percentage if we have data
         if total_monitors and total_monitors > 0:
@@ -279,7 +279,7 @@ class SyntheticMonitoringCollector:
             except (ValueError, TypeError):
                 pass
 
-    def _process_synthetic_monitoring_data(self, data: Dict[str, Any], namespace: str) -> None:
+    def _process_synthetic_monitoring_data(self, data: dict[str, Any], namespace: str) -> None:
         """Process synthetic monitoring data and update metrics (legacy method)."""
         logger.debug("Processing synthetic monitoring data", namespace=namespace)
 
@@ -308,7 +308,7 @@ class SyntheticMonitoringCollector:
         for stats in aggregate_stats:
             self._process_aggregate_stats(stats, namespace)
 
-    def _process_http_monitor(self, monitor: Dict[str, Any], namespace: str) -> None:
+    def _process_http_monitor(self, monitor: dict[str, Any], namespace: str) -> None:
         """Process HTTP monitor data."""
         monitor_name = monitor.get("name", "unknown")
         target_url = monitor.get("target_url", "unknown")
@@ -383,7 +383,7 @@ class SyntheticMonitoringCollector:
                 status=status
             )._value._value += 1
 
-    def _process_dns_monitor(self, monitor: Dict[str, Any], namespace: str) -> None:
+    def _process_dns_monitor(self, monitor: dict[str, Any], namespace: str) -> None:
         """Process DNS monitor data."""
         monitor_name = monitor.get("name", "unknown")
         target_domain = monitor.get("target_domain", "unknown")
@@ -415,7 +415,7 @@ class SyntheticMonitoringCollector:
                 pass
 
             # Process DNS records
-            record_counts = {}
+            record_counts: dict[str, int] = {}
             for record in records:
                 record_type = record.get("type", "unknown")
                 record_counts[record_type] = record_counts.get(record_type, 0) + 1
@@ -438,7 +438,7 @@ class SyntheticMonitoringCollector:
                 status=status
             )._value._value += 1
 
-    def _process_tcp_monitor(self, monitor: Dict[str, Any], namespace: str) -> None:
+    def _process_tcp_monitor(self, monitor: dict[str, Any], namespace: str) -> None:
         """Process TCP monitor data."""
         monitor_name = monitor.get("name", "unknown")
         target_host = monitor.get("target_host", "unknown")
@@ -480,7 +480,7 @@ class SyntheticMonitoringCollector:
                 status=status
             )._value._value += 1
 
-    def _process_ping_monitor(self, monitor: Dict[str, Any], namespace: str) -> None:
+    def _process_ping_monitor(self, monitor: dict[str, Any], namespace: str) -> None:
         """Process Ping monitor data."""
         monitor_name = monitor.get("name", "unknown")
         target_host = monitor.get("target_host", "unknown")
@@ -531,7 +531,7 @@ class SyntheticMonitoringCollector:
                 status=status
             )._value._value += 1
 
-    def _process_aggregate_stats(self, stats: Dict[str, Any], namespace: str) -> None:
+    def _process_aggregate_stats(self, stats: dict[str, Any], namespace: str) -> None:
         """Process aggregate statistics."""
         monitor_name = stats.get("monitor_name", "unknown")
         location = stats.get("location", "unknown")

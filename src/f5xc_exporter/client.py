@@ -1,7 +1,8 @@
 """F5 Distributed Cloud API client."""
 
 import time
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta
+from typing import Any
 from urllib.parse import urljoin
 
 import requests
@@ -54,15 +55,15 @@ class F5XCClient:
             "User-Agent": "f5xc-prom-exporter/0.1.0",
         })
 
-        # Set timeout
-        self.session.timeout = config.f5xc_request_timeout
+        # Store timeout for requests
+        self.timeout = config.f5xc_request_timeout
 
     def _make_request(
         self,
         method: str,
         endpoint: str,
         **kwargs: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Make HTTP request to F5XC API."""
         url = urljoin(self.config.tenant_url_str, endpoint)
 
@@ -74,7 +75,7 @@ class F5XCClient:
         )
 
         try:
-            response = self.session.request(method, url, **kwargs)
+            response = self.session.request(method, url, timeout=self.timeout, **kwargs)
 
             # Handle rate limiting
             if response.status_code == 429:
@@ -104,7 +105,7 @@ class F5XCClient:
                 response_size=len(response.content),
             )
 
-            return data
+            return dict(data)
 
         except requests.exceptions.RequestException as e:
             logger.error(
@@ -115,15 +116,15 @@ class F5XCClient:
             )
             raise F5XCAPIError(f"API request failed: {e}") from e
 
-    def get(self, endpoint: str, **kwargs: Any) -> Dict[str, Any]:
+    def get(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
         """Make GET request."""
         return self._make_request("GET", endpoint, **kwargs)
 
-    def post(self, endpoint: str, **kwargs: Any) -> Dict[str, Any]:
+    def post(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
         """Make POST request."""
         return self._make_request("POST", endpoint, **kwargs)
 
-    def list_namespaces(self) -> List[str]:
+    def list_namespaces(self) -> list[str]:
         """List all namespaces in the tenant.
 
         Returns:
@@ -143,12 +144,12 @@ class F5XCClient:
             and item.get("name") != "system"
         ]
 
-    def get_quota_usage(self, namespace: str = "system") -> Dict[str, Any]:
+    def get_quota_usage(self, namespace: str = "system") -> dict[str, Any]:
         """Get quota usage for namespace."""
         endpoint = f"/api/web/namespaces/{namespace}/quota/usage"
         return self.get(endpoint)
 
-    def get_service_graph_data(self, namespace: str = "system") -> Dict[str, Any]:
+    def get_service_graph_data(self, namespace: str = "system") -> dict[str, Any]:
         """Get service graph data for namespace."""
         endpoint = f"/api/data/namespaces/{namespace}/graph/service"
 
@@ -167,25 +168,176 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_app_firewall_metrics(self, namespace: str = "system") -> Dict[str, Any]:
-        """Get app firewall (WAF) metrics for namespace.
+    def get_app_firewall_metrics_for_namespace(
+        self,
+        namespace: str,
+        step_seconds: int = 300
+    ) -> dict[str, Any]:
+        """Get app firewall metrics for a namespace.
 
-        Uses the correct F5XC API endpoint: /api/data/namespaces/{namespace}/app_firewall/metrics
+        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_firewall/metrics
+        Returns metrics grouped by virtual host (load balancer).
+
+        Args:
+            namespace: The namespace to query
+            step_seconds: Time step for metrics aggregation (default: 300s / 5min)
+
+        Returns:
+            Response containing TOTAL_REQUESTS, ATTACKED_REQUESTS, BOT_DETECTION
+            grouped by VIRTUAL_HOST
         """
         endpoint = f"/api/data/namespaces/{namespace}/app_firewall/metrics"
+        end_time = int(time.time())
+        start_time = end_time - step_seconds
 
-        # App firewall metrics requires POST with query parameters
         payload = {
             "namespace": namespace,
-            "agg_type": "sum",
-            "group_by": ["vhost_name", "attack_type"],
-            "start_time": int(time.time() - 3600),  # Last hour
-            "end_time": int(time.time())
+            "field_selector": ["TOTAL_REQUESTS", "ATTACKED_REQUESTS", "BOT_DETECTION"],
+            "group_by": ["VIRTUAL_HOST"],
+            "filter": f'NAMESPACE="{namespace}"',
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            "step": f"{step_seconds}s"
         }
 
         return self.post(endpoint, json=payload)
 
-    def get_firewall_logs(self, namespace: str = "system") -> Dict[str, Any]:
+    def get_malicious_bot_metrics_for_namespace(
+        self,
+        namespace: str,
+        step_seconds: int = 300
+    ) -> dict[str, Any]:
+        """Get malicious bot metrics for a namespace.
+
+        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_firewall/metrics
+        with BOT_CLASSIFICATION filter to get only malicious bots.
+
+        Args:
+            namespace: The namespace to query
+            step_seconds: Time step for metrics aggregation (default: 300s / 5min)
+
+        Returns:
+            Response containing BOT_DETECTION counts for malicious bots only
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/app_firewall/metrics"
+        end_time = int(time.time())
+        start_time = end_time - step_seconds
+
+        payload = {
+            "namespace": namespace,
+            "field_selector": ["BOT_DETECTION"],
+            "group_by": ["VIRTUAL_HOST"],
+            "filter": f'BOT_CLASSIFICATION="malicious",NAMESPACE="{namespace}"',
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            "step": f"{step_seconds}s"
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_security_event_counts_for_namespace(
+        self,
+        namespace: str,
+        event_types: list[str],
+        step_seconds: int = 300
+    ) -> dict[str, Any]:
+        """Get security event counts aggregated by load balancer.
+
+        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_security/events/aggregation
+        to get counts of security events by type and load balancer.
+
+        Args:
+            namespace: The namespace to query
+            event_types: List of sec_event_type values to query
+                         (e.g., ["waf_sec_event", "bot_defense_sec_event"])
+            step_seconds: Time window for event aggregation (default: 300s / 5min)
+
+        Returns:
+            Response containing event counts aggregated by VH_NAME and SEC_EVENT_TYPE
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/app_security/events/aggregation"
+
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(seconds=step_seconds)
+
+        # Build query filter for event types
+        event_filter = "|".join(event_types)
+
+        payload = {
+            "namespace": namespace,
+            "query": f'{{sec_event_type=~"{event_filter}"}}',
+            "aggs": {
+                "by_lb_and_type": {
+                    "field_aggregation": {
+                        "field": "VH_NAME",
+                        "topk": 100,
+                        "sub_aggs": {
+                            "by_type": {
+                                "field_aggregation": {"field": "SEC_EVENT_TYPE"}
+                            }
+                        }
+                    }
+                }
+            },
+            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_security_events_by_country_for_namespace(
+        self,
+        namespace: str,
+        event_types: list[str],
+        step_seconds: int = 300
+    ) -> dict[str, Any]:
+        """Get security events aggregated by country and top attack sources.
+
+        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_security/events/aggregation
+        to get event counts by country and top attack sources (IP + country).
+
+        Args:
+            namespace: The namespace to query
+            event_types: List of sec_event_type values to query
+            step_seconds: Time window for event aggregation (default: 300s / 5min)
+
+        Returns:
+            Response containing:
+            - Events by country (COUNTRY field)
+            - Top attack sources with IP and country (SRC_IP_COUNTRY multi-field)
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/app_security/events/aggregation"
+
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(seconds=step_seconds)
+
+        # Build query filter for event types
+        event_filter = "|".join(event_types)
+
+        payload = {
+            "namespace": namespace,
+            "query": f'{{sec_event_type=~"{event_filter}"}}',
+            "aggs": {
+                "by_country": {
+                    "field_aggregation": {
+                        "field": "COUNTRY",
+                        "topk": 20
+                    }
+                },
+                "top_attack_sources": {
+                    "multi_field_aggregation": {
+                        "field": "SRC_IP_COUNTRY",
+                        "topk": 10
+                    }
+                }
+            },
+            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_firewall_logs(self, namespace: str = "system") -> dict[str, Any]:
         """Get firewall logs (security events) for namespace.
 
         Uses the correct F5XC API endpoint: /api/data/namespaces/{namespace}/firewall_logs
@@ -205,7 +357,7 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_access_logs_aggregation(self, namespace: str = "system") -> Dict[str, Any]:
+    def get_access_logs_aggregation(self, namespace: str = "system") -> dict[str, Any]:
         """Get aggregated access logs for namespace.
 
         Uses the correct F5XC API endpoint: /api/data/namespaces/{namespace}/access_logs/aggregation
@@ -227,7 +379,7 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_synthetic_monitoring_health(self, namespace: str = "system") -> Dict[str, Any]:
+    def get_synthetic_monitoring_health(self, namespace: str = "system") -> dict[str, Any]:
         """Get synthetic monitoring health status for namespace.
 
         Uses the correct F5XC API endpoint: /api/observability/synthetic_monitor/namespaces/{namespace}/health
@@ -241,7 +393,7 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_synthetic_monitoring_summary(self, namespace: str = "system") -> Dict[str, Any]:
+    def get_synthetic_monitoring_summary(self, namespace: str = "system") -> dict[str, Any]:
         """Get synthetic monitoring global summary for namespace.
 
         Uses the correct F5XC API endpoint: /api/observability/synthetic_monitor/namespaces/{namespace}/global-summary
@@ -257,10 +409,11 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_http_monitors_health(self, namespace: str = "system") -> Dict[str, Any]:
+    def get_http_monitors_health(self, namespace: str = "system") -> dict[str, Any]:
         """Get HTTP monitors health for namespace.
 
-        Uses the correct F5XC API endpoint: /api/observability/synthetic_monitor/namespaces/{namespace}/http-monitors-health
+        Uses the F5XC API endpoint:
+        /api/observability/synthetic_monitor/namespaces/{namespace}/http-monitors-health
         """
         endpoint = f"/api/observability/synthetic_monitor/namespaces/{namespace}/http-monitors-health"
 
@@ -271,7 +424,7 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_http_lb_metrics(self, step_seconds: int = 120) -> Dict[str, Any]:
+    def get_http_lb_metrics(self, step_seconds: int = 120) -> dict[str, Any]:
         """Get HTTP load balancer metrics across all namespaces.
 
         Uses QueryAllNamespaces API: /api/data/namespaces/system/graph/all_ns_service
@@ -327,7 +480,7 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_tcp_lb_metrics(self, step_seconds: int = 120) -> Dict[str, Any]:
+    def get_tcp_lb_metrics(self, step_seconds: int = 120) -> dict[str, Any]:
         """Get TCP load balancer metrics across all namespaces.
 
         Uses QueryAllNamespaces API: /api/data/namespaces/system/graph/all_ns_service
@@ -377,7 +530,7 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_udp_lb_metrics(self, step_seconds: int = 120) -> Dict[str, Any]:
+    def get_udp_lb_metrics(self, step_seconds: int = 120) -> dict[str, Any]:
         """Get UDP load balancer metrics across all namespaces.
 
         Uses QueryAllNamespaces API: /api/data/namespaces/system/graph/all_ns_service
@@ -426,7 +579,7 @@ class F5XCClient:
         self,
         namespace: str,
         step_seconds: int = 120
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get ALL load balancer metrics (HTTP, TCP, UDP) for a namespace in one call.
 
         Uses the per-namespace service graph API without LABEL_VHOST_TYPE filter
@@ -489,7 +642,7 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_all_lb_metrics(self, step_seconds: int = 120) -> Dict[str, Any]:
+    def get_all_lb_metrics(self, step_seconds: int = 120) -> dict[str, Any]:
         """Get all LB metrics across all namespaces.
 
         Iterates through all namespaces and collects LB metrics for each,

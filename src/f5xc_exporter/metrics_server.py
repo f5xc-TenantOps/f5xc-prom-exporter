@@ -1,19 +1,18 @@
 """Prometheus metrics HTTP server."""
 
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 
 import structlog
-from prometheus_client import CollectorRegistry, CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 
 from .client import F5XCClient
 from .collectors import (
+    LoadBalancerCollector,
     QuotaCollector,
     SecurityCollector,
     SyntheticMonitoringCollector,
-    LoadBalancerCollector,
 )
 from .config import Config
 
@@ -94,21 +93,24 @@ class MetricsServer:
         self.registry.register(self.quota_collector.quota_collection_success)
         self.registry.register(self.quota_collector.quota_collection_duration)
 
-        # Security metrics
-        self.registry.register(self.security_collector.waf_requests_total)
-        self.registry.register(self.security_collector.waf_blocked_requests_total)
-        self.registry.register(self.security_collector.waf_rule_hits_total)
-        self.registry.register(self.security_collector.bot_requests_total)
-        self.registry.register(self.security_collector.bot_blocked_requests_total)
-        self.registry.register(self.security_collector.bot_score)
-        self.registry.register(self.security_collector.api_endpoints_discovered)
-        self.registry.register(self.security_collector.api_schema_violations_total)
-        self.registry.register(self.security_collector.ddos_attacks_total)
-        self.registry.register(self.security_collector.ddos_mitigation_active)
-        self.registry.register(self.security_collector.security_events_total)
-        self.registry.register(self.security_collector.security_alerts_total)
-        self.registry.register(self.security_collector.security_collection_success)
-        self.registry.register(self.security_collector.security_collection_duration)
+        # Security metrics - App Firewall (API 1)
+        self.registry.register(self.security_collector.total_requests)
+        self.registry.register(self.security_collector.attacked_requests)
+        self.registry.register(self.security_collector.bot_detections)
+        self.registry.register(self.security_collector.malicious_bot_detections)
+        # Security metrics - Event Counts (API 2)
+        self.registry.register(self.security_collector.waf_events)
+        self.registry.register(self.security_collector.bot_defense_events)
+        self.registry.register(self.security_collector.api_events)
+        self.registry.register(self.security_collector.service_policy_events)
+        self.registry.register(self.security_collector.malicious_user_events)
+        self.registry.register(self.security_collector.dos_events)
+        # Security metrics - Geographic/Source
+        self.registry.register(self.security_collector.events_by_country)
+        self.registry.register(self.security_collector.top_attack_sources)
+        # Security collection status
+        self.registry.register(self.security_collector.collection_success)
+        self.registry.register(self.security_collector.collection_duration)
 
         # Synthetic monitoring metrics
         self.registry.register(self.synthetic_monitoring_collector.http_check_success)
@@ -169,7 +171,7 @@ class MetricsServer:
         self.registry.register(self.lb_collector.udp_lb_count)
 
         # Collection threads
-        self.collection_threads: Dict[str, threading.Thread] = {}
+        self.collection_threads: dict[str, threading.Thread] = {}
         self.stop_event = threading.Event()
 
         # HTTP server
@@ -239,7 +241,7 @@ class MetricsServer:
     def _start_http_server(self) -> None:
         """Start HTTP server for metrics endpoint."""
         self.httpd = HTTPServer(("", self.config.f5xc_exp_http_port), MetricsHandler)
-        self.httpd.registry = self.registry
+        self.httpd.registry = self.registry  # type: ignore[attr-defined]
 
         logger.info("Starting HTTP server", port=self.config.f5xc_exp_http_port)
 
@@ -340,7 +342,7 @@ class MetricsServer:
 
         logger.info("F5XC Prometheus exporter stopped")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get server status information."""
         lb_interval = min(
             self.config.f5xc_http_lb_interval,

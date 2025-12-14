@@ -1,16 +1,14 @@
 """Configuration management for F5XC Prometheus Exporter."""
 
-import os
-from typing import Optional
 
-from pydantic import Field, HttpUrl, ConfigDict
-from pydantic_settings import BaseSettings
+from pydantic import Field, HttpUrl
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Config(BaseSettings):
     """Configuration for F5XC Prometheus Exporter."""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore"
@@ -54,5 +52,5 @@ class Config(BaseSettings):
 
 
 def get_config() -> Config:
-    """Get configuration instance."""
-    return Config()
+    """Get configuration instance from environment variables."""
+    return Config()  # type: ignore[call-arg]

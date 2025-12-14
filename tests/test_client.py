@@ -1,11 +1,17 @@
 """Tests for F5XC API client."""
 
 import json
+from unittest.mock import Mock
+
 import pytest
 import responses
-from unittest.mock import Mock, patch
 
-from f5xc_exporter.client import F5XCClient, F5XCAPIError, F5XCAuthenticationError, F5XCRateLimitError
+from f5xc_exporter.client import (
+    F5XCAPIError,
+    F5XCAuthenticationError,
+    F5XCClient,
+    F5XCRateLimitError,
+)
 
 
 class TestF5XCClient:
@@ -163,32 +169,31 @@ class TestF5XCClient:
     @responses.activate
     def test_get_security_methods(self, test_config):
         """Test security-related API methods with correct endpoints."""
-        # Mock the correct API endpoints
+        # Mock the correct API endpoints for new security methods
         responses.add(
             responses.POST,
-            "https://test.console.ves.volterra.io/api/data/namespaces/system/app_firewall/metrics",
-            json={"metrics": []},
+            "https://test.console.ves.volterra.io/api/data/namespaces/demo-shop/app_firewall/metrics",
+            json={"data": [], "step": "5m"},
             status=200
         )
         responses.add(
             responses.POST,
-            "https://test.console.ves.volterra.io/api/data/namespaces/system/firewall_logs",
-            json={"total": 0, "events": []},
-            status=200
-        )
-        responses.add(
-            responses.POST,
-            "https://test.console.ves.volterra.io/api/data/namespaces/system/access_logs/aggregation",
-            json={"aggs": {}},
+            "https://test.console.ves.volterra.io/api/data/namespaces/demo-shop/app_security/events/aggregation",
+            json={"aggs": {}, "total_hits": "0"},
             status=200
         )
 
         client = F5XCClient(test_config)
 
-        # Test new API methods
-        assert "metrics" in client.get_app_firewall_metrics()
-        assert "total" in client.get_firewall_logs()
-        assert "aggs" in client.get_access_logs_aggregation()
+        # Test new security API methods
+        result = client.get_app_firewall_metrics_for_namespace("demo-shop")
+        assert "data" in result
+
+        result = client.get_malicious_bot_metrics_for_namespace("demo-shop")
+        assert "data" in result
+
+        result = client.get_security_event_counts_for_namespace("demo-shop", ["waf_sec_event"])
+        assert "aggs" in result
 
     @responses.activate
     def test_get_synthetic_monitoring_metrics(self, test_config, sample_synthetic_response):
