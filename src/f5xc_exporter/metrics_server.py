@@ -241,7 +241,7 @@ class MetricsServer:
     def _start_http_server(self) -> None:
         """Start HTTP server for metrics endpoint."""
         self.httpd = HTTPServer(("", self.config.f5xc_exp_http_port), MetricsHandler)
-        self.httpd.registry = self.registry
+        self.httpd.registry = self.registry  # type: ignore[attr-defined]
 
         logger.info("Starting HTTP server", port=self.config.f5xc_exp_http_port)
 

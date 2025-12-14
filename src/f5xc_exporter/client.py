@@ -55,8 +55,8 @@ class F5XCClient:
             "User-Agent": "f5xc-prom-exporter/0.1.0",
         })
 
-        # Set timeout
-        self.session.timeout = config.f5xc_request_timeout
+        # Store timeout for requests
+        self.timeout = config.f5xc_request_timeout
 
     def _make_request(
         self,
@@ -75,7 +75,7 @@ class F5XCClient:
         )
 
         try:
-            response = self.session.request(method, url, **kwargs)
+            response = self.session.request(method, url, timeout=self.timeout, **kwargs)
 
             # Handle rate limiting
             if response.status_code == 429:
@@ -105,7 +105,7 @@ class F5XCClient:
                 response_size=len(response.content),
             )
 
-            return data
+            return dict(data)
 
         except requests.exceptions.RequestException as e:
             logger.error(

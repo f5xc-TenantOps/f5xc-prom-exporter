@@ -3,6 +3,7 @@
 import logging
 import signal
 import sys
+from typing import Any
 
 import structlog
 
@@ -61,7 +62,7 @@ def main() -> None:
     server = MetricsServer(config)
 
     # Handle shutdown signals
-    def signal_handler(signum: int, frame: any) -> None:
+    def signal_handler(signum: int, frame: Any) -> None:
         logger.info("Received shutdown signal", signal=signum)
         server.stop()
         sys.exit(0)

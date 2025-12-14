@@ -415,7 +415,7 @@ class SyntheticMonitoringCollector:
                 pass
 
             # Process DNS records
-            record_counts = {}
+            record_counts: dict[str, int] = {}
             for record in records:
                 record_type = record.get("type", "unknown")
                 record_counts[record_type] = record_counts.get(record_type, 0) + 1

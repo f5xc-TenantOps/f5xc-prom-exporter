@@ -305,7 +305,7 @@ class LoadBalancerCollector:
             The virtual_host_type if processed, None if skipped
         """
         node_id = node.get("id", {})
-        virtual_host_type = node_id.get("virtual_host_type", "")
+        virtual_host_type: str = node_id.get("virtual_host_type", "")
 
         # Skip nodes without a recognized LB type
         if virtual_host_type not in ("HTTP_LOAD_BALANCER", "TCP_LOAD_BALANCER", "UDP_LOAD_BALANCER"):
