@@ -46,6 +46,11 @@ def mock_client(test_config):
         client.get_tcp_lb_metrics = Mock()
         client.get_udp_lb_metrics = Mock()
 
+        # Unified LB metrics methods
+        client.list_namespaces = Mock()
+        client.get_all_lb_metrics_for_namespace = Mock()
+        client.get_all_lb_metrics = Mock()
+
         yield client
 
 
@@ -177,7 +182,7 @@ def sample_synthetic_summary_response():
 
 @pytest.fixture
 def sample_http_lb_response():
-    """Sample HTTP LB metrics API response - matches QueryAllNamespaces structure."""
+    """Sample HTTP LB metrics API response - matches per-namespace service graph structure."""
     return {
         "data": {
             "nodes": [
@@ -185,7 +190,8 @@ def sample_http_lb_response():
                     "id": {
                         "namespace": "prod",
                         "vhost": "app-frontend",
-                        "site": "ce-site-1"
+                        "site": "ce-site-1",
+                        "virtual_host_type": "HTTP_LOAD_BALANCER"
                     },
                     "data": {
                         "metric": {
@@ -276,7 +282,8 @@ def sample_http_lb_response():
                     "id": {
                         "namespace": "staging",
                         "vhost": "api-gateway",
-                        "site": "ce-site-2"
+                        "site": "ce-site-2",
+                        "virtual_host_type": "HTTP_LOAD_BALANCER"
                     },
                     "data": {
                         "metric": {
@@ -305,7 +312,7 @@ def sample_http_lb_response():
 
 @pytest.fixture
 def sample_tcp_lb_response():
-    """Sample TCP LB metrics API response - matches QueryAllNamespaces structure."""
+    """Sample TCP LB metrics API response - matches per-namespace service graph structure."""
     return {
         "data": {
             "nodes": [
@@ -313,7 +320,8 @@ def sample_tcp_lb_response():
                     "id": {
                         "namespace": "prod",
                         "vhost": "tcp-backend",
-                        "site": "ce-site-1"
+                        "site": "ce-site-1",
+                        "virtual_host_type": "TCP_LOAD_BALANCER"
                     },
                     "data": {
                         "metric": {
@@ -384,7 +392,7 @@ def sample_tcp_lb_response():
 
 @pytest.fixture
 def sample_udp_lb_response():
-    """Sample UDP LB metrics API response - matches QueryAllNamespaces structure."""
+    """Sample UDP LB metrics API response - matches per-namespace service graph structure."""
     return {
         "data": {
             "nodes": [
@@ -392,7 +400,8 @@ def sample_udp_lb_response():
                     "id": {
                         "namespace": "prod",
                         "vhost": "udp-dns-lb",
-                        "site": "ce-site-1"
+                        "site": "ce-site-1",
+                        "virtual_host_type": "UDP_LOAD_BALANCER"
                     },
                     "data": {
                         "metric": {

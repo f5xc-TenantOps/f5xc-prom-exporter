@@ -256,19 +256,19 @@ class TestHttpLoadBalancerCollector:
 
     def test_http_lb_metrics_collection_success(self, mock_client, sample_http_lb_response):
         """Test successful HTTP LB metrics collection."""
-        mock_client.get_http_lb_metrics.return_value = sample_http_lb_response
+        mock_client.get_all_lb_metrics.return_value = sample_http_lb_response
 
         collector = HttpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
 
-        mock_client.get_http_lb_metrics.assert_called_once()
+        mock_client.get_all_lb_metrics.assert_called_once()
 
         # Check that success metric is set
         assert collector.collection_success._value._value == 1
 
     def test_http_lb_metrics_collection_failure(self, mock_client):
         """Test HTTP LB metrics collection failure handling."""
-        mock_client.get_http_lb_metrics.side_effect = F5XCAPIError("API Error")
+        mock_client.get_all_lb_metrics.side_effect = F5XCAPIError("API Error")
 
         collector = HttpLoadBalancerCollector(mock_client)
 
@@ -280,7 +280,7 @@ class TestHttpLoadBalancerCollector:
 
     def test_http_lb_data_processing_multi_namespace(self, mock_client, sample_http_lb_response):
         """Test HTTP LB data processing with multiple namespaces."""
-        mock_client.get_http_lb_metrics.return_value = sample_http_lb_response
+        mock_client.get_all_lb_metrics.return_value = sample_http_lb_response
 
         collector = HttpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
@@ -324,7 +324,7 @@ class TestHttpLoadBalancerCollector:
 
     def test_http_lb_latency_percentiles_processing(self, mock_client, sample_http_lb_response):
         """Test HTTP LB latency percentiles are processed correctly."""
-        mock_client.get_http_lb_metrics.return_value = sample_http_lb_response
+        mock_client.get_all_lb_metrics.return_value = sample_http_lb_response
 
         collector = HttpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
@@ -353,7 +353,7 @@ class TestHttpLoadBalancerCollector:
 
     def test_http_lb_throughput_and_rtt_processing(self, mock_client, sample_http_lb_response):
         """Test HTTP LB throughput and RTT metrics are processed correctly."""
-        mock_client.get_http_lb_metrics.return_value = sample_http_lb_response
+        mock_client.get_all_lb_metrics.return_value = sample_http_lb_response
 
         collector = HttpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
@@ -390,7 +390,7 @@ class TestHttpLoadBalancerCollector:
 
     def test_http_lb_empty_response(self, mock_client):
         """Test HTTP LB collector handles empty response gracefully."""
-        mock_client.get_http_lb_metrics.return_value = {"data": {"nodes": []}}
+        mock_client.get_all_lb_metrics.return_value = {"data": {"nodes": []}}
 
         collector = HttpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
@@ -400,7 +400,7 @@ class TestHttpLoadBalancerCollector:
 
     def test_http_lb_missing_vhost_skipped(self, mock_client):
         """Test nodes without vhost are skipped."""
-        mock_client.get_http_lb_metrics.return_value = {
+        mock_client.get_all_lb_metrics.return_value = {
             "data": {
                 "nodes": [
                     {
@@ -460,19 +460,19 @@ class TestTcpLoadBalancerCollector:
 
     def test_tcp_lb_metrics_collection_success(self, mock_client, sample_tcp_lb_response):
         """Test successful TCP LB metrics collection."""
-        mock_client.get_tcp_lb_metrics.return_value = sample_tcp_lb_response
+        mock_client.get_all_lb_metrics.return_value = sample_tcp_lb_response
 
         collector = TcpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
 
-        mock_client.get_tcp_lb_metrics.assert_called_once()
+        mock_client.get_all_lb_metrics.assert_called_once()
 
         # Check that success metric is set
         assert collector.collection_success._value._value == 1
 
     def test_tcp_lb_metrics_collection_failure(self, mock_client):
         """Test TCP LB metrics collection failure handling."""
-        mock_client.get_tcp_lb_metrics.side_effect = F5XCAPIError("API Error")
+        mock_client.get_all_lb_metrics.side_effect = F5XCAPIError("API Error")
 
         collector = TcpLoadBalancerCollector(mock_client)
 
@@ -484,7 +484,7 @@ class TestTcpLoadBalancerCollector:
 
     def test_tcp_lb_data_processing(self, mock_client, sample_tcp_lb_response):
         """Test TCP LB data processing."""
-        mock_client.get_tcp_lb_metrics.return_value = sample_tcp_lb_response
+        mock_client.get_all_lb_metrics.return_value = sample_tcp_lb_response
 
         collector = TcpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
@@ -529,7 +529,7 @@ class TestTcpLoadBalancerCollector:
 
     def test_tcp_lb_empty_response(self, mock_client):
         """Test TCP LB collector handles empty response gracefully."""
-        mock_client.get_tcp_lb_metrics.return_value = {"data": {"nodes": []}}
+        mock_client.get_all_lb_metrics.return_value = {"data": {"nodes": []}}
 
         collector = TcpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
@@ -558,19 +558,19 @@ class TestUdpLoadBalancerCollector:
 
     def test_udp_lb_metrics_collection_success(self, mock_client, sample_udp_lb_response):
         """Test successful UDP LB metrics collection."""
-        mock_client.get_udp_lb_metrics.return_value = sample_udp_lb_response
+        mock_client.get_all_lb_metrics.return_value = sample_udp_lb_response
 
         collector = UdpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
 
-        mock_client.get_udp_lb_metrics.assert_called_once()
+        mock_client.get_all_lb_metrics.assert_called_once()
 
         # Check that success metric is set
         assert collector.collection_success._value._value == 1
 
     def test_udp_lb_metrics_collection_failure(self, mock_client):
         """Test UDP LB metrics collection failure handling."""
-        mock_client.get_udp_lb_metrics.side_effect = F5XCAPIError("API Error")
+        mock_client.get_all_lb_metrics.side_effect = F5XCAPIError("API Error")
 
         collector = UdpLoadBalancerCollector(mock_client)
 
@@ -582,7 +582,7 @@ class TestUdpLoadBalancerCollector:
 
     def test_udp_lb_data_processing(self, mock_client, sample_udp_lb_response):
         """Test UDP LB data processing."""
-        mock_client.get_udp_lb_metrics.return_value = sample_udp_lb_response
+        mock_client.get_all_lb_metrics.return_value = sample_udp_lb_response
 
         collector = UdpLoadBalancerCollector(mock_client)
         collector.collect_metrics()
@@ -619,7 +619,7 @@ class TestUdpLoadBalancerCollector:
 
     def test_udp_lb_empty_response(self, mock_client):
         """Test UDP LB collector handles empty response gracefully."""
-        mock_client.get_udp_lb_metrics.return_value = {"data": {"nodes": []}}
+        mock_client.get_all_lb_metrics.return_value = {"data": {"nodes": []}}
 
         collector = UdpLoadBalancerCollector(mock_client)
         collector.collect_metrics()

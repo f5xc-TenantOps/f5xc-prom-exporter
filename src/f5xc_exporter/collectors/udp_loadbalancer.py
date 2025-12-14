@@ -14,8 +14,9 @@ logger = structlog.get_logger()
 class UdpLoadBalancerCollector:
     """Collector for F5XC UDP Load Balancer metrics.
 
-    Uses the QueryAllNamespaces API to collect metrics for all UDP LBs
-    across all namespaces in a single API call.
+    Uses the per-namespace service graph API to collect metrics for all UDP LBs
+    across all namespaces. Filters nodes by virtual_host_type to only process
+    UDP load balancers.
     """
 
     # Mapping from F5XC metric types to Prometheus metric attributes
@@ -79,8 +80,8 @@ class UdpLoadBalancerCollector:
         try:
             logger.info("Collecting UDP load balancer metrics")
 
-            # Get UDP LB metrics from all namespaces
-            data = self.client.get_udp_lb_metrics()
+            # Get all LB metrics from all namespaces (HTTP, TCP, UDP combined)
+            data = self.client.get_all_lb_metrics()
 
             # Process the response
             self._process_response(data)
@@ -120,6 +121,12 @@ class UdpLoadBalancerCollector:
         """Process a single node from the response."""
         # Extract node identity
         node_id = node.get("id", {})
+
+        # Skip nodes that aren't UDP load balancers
+        virtual_host_type = node_id.get("virtual_host_type", "")
+        if virtual_host_type != "UDP_LOAD_BALANCER":
+            return
+
         namespace = node_id.get("namespace", "unknown")
         vhost = node_id.get("vhost", "unknown")
         site = node_id.get("site", "unknown")

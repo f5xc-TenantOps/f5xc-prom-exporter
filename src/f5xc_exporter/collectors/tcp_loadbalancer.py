@@ -14,8 +14,9 @@ logger = structlog.get_logger()
 class TcpLoadBalancerCollector:
     """Collector for F5XC TCP Load Balancer metrics.
 
-    Uses the QueryAllNamespaces API to collect metrics for all TCP LBs
-    across all namespaces in a single API call.
+    Uses the per-namespace service graph API to collect metrics for all TCP LBs
+    across all namespaces. Filters nodes by virtual_host_type to only process
+    TCP load balancers.
     """
 
     # Mapping from F5XC metric types to Prometheus metric attributes
@@ -116,8 +117,8 @@ class TcpLoadBalancerCollector:
         try:
             logger.info("Collecting TCP load balancer metrics")
 
-            # Get TCP LB metrics from all namespaces
-            data = self.client.get_tcp_lb_metrics()
+            # Get all LB metrics from all namespaces (HTTP, TCP, UDP combined)
+            data = self.client.get_all_lb_metrics()
 
             # Process the response
             self._process_response(data)
@@ -157,6 +158,12 @@ class TcpLoadBalancerCollector:
         """Process a single node from the response."""
         # Extract node identity
         node_id = node.get("id", {})
+
+        # Skip nodes that aren't TCP load balancers
+        virtual_host_type = node_id.get("virtual_host_type", "")
+        if virtual_host_type != "TCP_LOAD_BALANCER":
+            return
+
         namespace = node_id.get("namespace", "unknown")
         vhost = node_id.get("vhost", "unknown")
         site = node_id.get("site", "unknown")

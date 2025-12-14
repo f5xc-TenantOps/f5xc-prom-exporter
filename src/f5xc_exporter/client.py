@@ -1,7 +1,7 @@
 """F5 Distributed Cloud API client."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 import requests
@@ -122,6 +122,22 @@ class F5XCClient:
     def post(self, endpoint: str, **kwargs: Any) -> Dict[str, Any]:
         """Make POST request."""
         return self._make_request("POST", endpoint, **kwargs)
+
+    def list_namespaces(self) -> List[str]:
+        """List all namespaces in the tenant.
+
+        Returns:
+            List of namespace names (excluding internal ves-io- namespaces)
+        """
+        endpoint = "/api/web/namespaces"
+        response = self.get(endpoint)
+        items = response.get("items", [])
+
+        # Filter out internal namespaces (ves-io-* are F5 internal)
+        return [
+            item.get("name", "") for item in items
+            if item.get("name") and not item.get("name", "").startswith("ves-io-")
+        ]
 
     def get_quota_usage(self, namespace: str = "system") -> Dict[str, Any]:
         """Get quota usage for namespace."""
@@ -401,6 +417,120 @@ class F5XCClient:
         }
 
         return self.post(endpoint, json=payload)
+
+    def get_all_lb_metrics_for_namespace(
+        self,
+        namespace: str,
+        step_seconds: int = 120
+    ) -> Dict[str, Any]:
+        """Get ALL load balancer metrics (HTTP, TCP, UDP) for a namespace in one call.
+
+        Uses the per-namespace service graph API without LABEL_VHOST_TYPE filter
+        to retrieve metrics for all load balancer types. The virtual_host_type
+        field in each node's ID indicates the LB type.
+
+        Args:
+            namespace: The namespace to query
+            step_seconds: Time step for metrics aggregation (default: 120s)
+
+        Returns:
+            Service graph response with nodes containing metrics for all LB types
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/graph/service"
+
+        end_time = int(time.time())
+        start_time = end_time - step_seconds
+
+        # Request ALL metrics from all LB types
+        all_metrics = [
+            # HTTP metrics
+            "HTTP_REQUEST_RATE",
+            "HTTP_ERROR_RATE",
+            "HTTP_ERROR_RATE_4XX",
+            "HTTP_ERROR_RATE_5XX",
+            "HTTP_RESPONSE_LATENCY",
+            "HTTP_RESPONSE_LATENCY_PERCENTILE_50",
+            "HTTP_RESPONSE_LATENCY_PERCENTILE_90",
+            "HTTP_RESPONSE_LATENCY_PERCENTILE_99",
+            "HTTP_APP_LATENCY",
+            "HTTP_SERVER_DATA_TRANSFER_TIME",
+            # TCP metrics
+            "TCP_CONNECTION_RATE",
+            "TCP_ERROR_RATE",
+            "TCP_ERROR_RATE_CLIENT",
+            "TCP_ERROR_RATE_UPSTREAM",
+            "TCP_CONNECTION_DURATION",
+            # Common metrics (apply to all LB types)
+            "REQUEST_THROUGHPUT",
+            "RESPONSE_THROUGHPUT",
+            "CLIENT_RTT",
+            "SERVER_RTT",
+            "REQUEST_TO_ORIGIN_RATE",
+        ]
+
+        payload = {
+            "field_selector": {
+                "node": {
+                    "metric": {
+                        "downstream": all_metrics
+                    }
+                }
+            },
+            "step": f"{step_seconds}s",
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            # NO label_filter - get all LB types
+            "group_by": ["VHOST", "SITE", "VIRTUAL_HOST_TYPE"]
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_all_lb_metrics(self, step_seconds: int = 120) -> Dict[str, Any]:
+        """Get all LB metrics across all namespaces.
+
+        Iterates through all namespaces and collects LB metrics for each,
+        aggregating the results into a single response structure.
+
+        Args:
+            step_seconds: Time step for metrics aggregation (default: 120s)
+
+        Returns:
+            Aggregated response with nodes from all namespaces, each node
+            containing namespace in its ID
+        """
+        namespaces = self.list_namespaces()
+        all_nodes = []
+
+        logger.info("Collecting LB metrics from all namespaces", namespace_count=len(namespaces))
+
+        for namespace in namespaces:
+            try:
+                response = self.get_all_lb_metrics_for_namespace(namespace, step_seconds)
+                nodes = response.get("data", {}).get("nodes", [])
+
+                for node in nodes:
+                    # Add namespace to node ID since per-namespace endpoint doesn't include it
+                    if "id" in node:
+                        node["id"]["namespace"] = namespace
+                    all_nodes.append(node)
+
+                logger.debug(
+                    "Collected LB metrics for namespace",
+                    namespace=namespace,
+                    node_count=len(nodes)
+                )
+
+            except F5XCAPIError as e:
+                logger.warning(
+                    "Failed to get LB metrics for namespace",
+                    namespace=namespace,
+                    error=str(e)
+                )
+                continue
+
+        logger.info("LB metrics collection complete", total_nodes=len(all_nodes))
+
+        return {"data": {"nodes": all_nodes, "edges": []}}
 
     def close(self) -> None:
         """Close the session."""
