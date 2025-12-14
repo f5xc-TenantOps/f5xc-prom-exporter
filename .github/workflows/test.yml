@@ -4,10 +4,12 @@ on:
   pull_request:
     branches:
       - main
+      - staging
     types: [opened, synchronize, reopened]
   push:
     branches:
       - main
+      - staging
 
 jobs:
   test:
