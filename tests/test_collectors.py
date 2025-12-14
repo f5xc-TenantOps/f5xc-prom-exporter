@@ -106,7 +106,8 @@ class TestSecurityCollector:
         sample_malicious_bot_metrics_response,
         sample_security_events_aggregation_response,
         sample_malicious_user_events_response,
-        sample_dos_events_response
+        sample_dos_events_response,
+        sample_country_attack_sources_response
     ):
         """Test successful security metrics collection."""
         mock_client.list_namespaces.return_value = ["demo-shop"]
@@ -117,6 +118,7 @@ class TestSecurityCollector:
             sample_malicious_user_events_response,  # Malicious user events
             sample_dos_events_response  # DoS events
         ]
+        mock_client.get_security_events_by_country_for_namespace.return_value = sample_country_attack_sources_response
 
         collector = SecurityCollector(mock_client)
         collector.collect_metrics()
@@ -256,12 +258,76 @@ class TestSecurityCollector:
         # Check that failure metric is set
         assert collector.collection_success._value._value == 0
 
+    def test_country_events_processing(
+        self,
+        mock_client,
+        sample_country_attack_sources_response
+    ):
+        """Test events by country processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_country_aggregation(sample_country_attack_sources_response, "demo-shop")
+
+        # Check Germany events
+        de_events = collector.events_by_country.labels(
+            namespace="demo-shop",
+            country="DE"
+        )
+        assert de_events._value._value == 1200.0
+
+        # Check US events
+        us_events = collector.events_by_country.labels(
+            namespace="demo-shop",
+            country="US"
+        )
+        assert us_events._value._value == 250.0
+
+        # Check China events
+        cn_events = collector.events_by_country.labels(
+            namespace="demo-shop",
+            country="CN"
+        )
+        assert cn_events._value._value == 67.0
+
+    def test_attack_sources_processing(
+        self,
+        mock_client,
+        sample_country_attack_sources_response
+    ):
+        """Test top attack sources processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_attack_sources_aggregation(sample_country_attack_sources_response, "demo-shop")
+
+        # Check top attack source from Germany
+        de_source = collector.top_attack_sources.labels(
+            namespace="demo-shop",
+            country="DE",
+            src_ip="188.68.49.235"
+        )
+        assert de_source._value._value == 1000.0
+
+        # Check attack source from US
+        us_source = collector.top_attack_sources.labels(
+            namespace="demo-shop",
+            country="US",
+            src_ip="45.33.32.156"
+        )
+        assert us_source._value._value == 200.0
+
+        # Check second attack source from Germany
+        de_source2 = collector.top_attack_sources.labels(
+            namespace="demo-shop",
+            country="DE",
+            src_ip="95.217.163.246"
+        )
+        assert de_source2._value._value == 150.0
+
     def test_security_empty_response_handling(self, mock_client):
         """Test security collector handles empty responses gracefully."""
         mock_client.list_namespaces.return_value = ["demo-shop"]
         mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
         mock_client.get_malicious_bot_metrics_for_namespace.return_value = {"data": []}
         mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
+        mock_client.get_security_events_by_country_for_namespace.return_value = {"aggs": {}}
 
         collector = SecurityCollector(mock_client)
         collector.collect_metrics()

@@ -106,6 +106,9 @@ class MetricsServer:
         self.registry.register(self.security_collector.service_policy_events)
         self.registry.register(self.security_collector.malicious_user_events)
         self.registry.register(self.security_collector.dos_events)
+        # Security metrics - Geographic/Source
+        self.registry.register(self.security_collector.events_by_country)
+        self.registry.register(self.security_collector.top_attack_sources)
         # Security collection status
         self.registry.register(self.security_collector.collection_success)
         self.registry.register(self.security_collector.collection_duration)

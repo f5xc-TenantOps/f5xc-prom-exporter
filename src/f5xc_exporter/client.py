@@ -285,6 +285,58 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
+    def get_security_events_by_country_for_namespace(
+        self,
+        namespace: str,
+        event_types: List[str],
+        step_seconds: int = 300
+    ) -> Dict[str, Any]:
+        """Get security events aggregated by country and top attack sources.
+
+        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_security/events/aggregation
+        to get event counts by country and top attack sources (IP + country).
+
+        Args:
+            namespace: The namespace to query
+            event_types: List of sec_event_type values to query
+            step_seconds: Time window for event aggregation (default: 300s / 5min)
+
+        Returns:
+            Response containing:
+            - Events by country (COUNTRY field)
+            - Top attack sources with IP and country (SRC_IP_COUNTRY multi-field)
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/app_security/events/aggregation"
+
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(seconds=step_seconds)
+
+        # Build query filter for event types
+        event_filter = "|".join(event_types)
+
+        payload = {
+            "namespace": namespace,
+            "query": f'{{sec_event_type=~"{event_filter}"}}',
+            "aggs": {
+                "by_country": {
+                    "field_aggregation": {
+                        "field": "COUNTRY",
+                        "topk": 20
+                    }
+                },
+                "top_attack_sources": {
+                    "multi_field_aggregation": {
+                        "field": "SRC_IP_COUNTRY",
+                        "topk": 10
+                    }
+                }
+            },
+            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        }
+
+        return self.post(endpoint, json=payload)
+
     def get_firewall_logs(self, namespace: str = "system") -> Dict[str, Any]:
         """Get firewall logs (security events) for namespace.
 

@@ -96,6 +96,18 @@ class SecurityCollector:
             labels
         )
 
+        # --- Geographic/Source Metrics ---
+        self.events_by_country = Gauge(
+            "f5xc_security_events_by_country",
+            "Security events by source country",
+            ["namespace", "country"]
+        )
+        self.top_attack_sources = Gauge(
+            "f5xc_security_top_attack_sources",
+            "Top attack sources by IP and country",
+            ["namespace", "country", "src_ip"]
+        )
+
         # --- Collection Status Metrics (no labels) ---
         self.collection_success = Gauge(
             "f5xc_security_collection_success",
@@ -122,6 +134,7 @@ class SecurityCollector:
                 try:
                     self._collect_app_firewall_metrics(namespace)
                     self._collect_security_event_counts(namespace)
+                    self._collect_geographic_metrics(namespace)
                 except F5XCAPIError as e:
                     logger.warning(
                         "Failed to collect security metrics for namespace",
@@ -211,6 +224,21 @@ class SecurityCollector:
         except F5XCAPIError as e:
             logger.warning(
                 "Failed to get DoS events",
+                namespace=namespace,
+                error=str(e)
+            )
+
+    def _collect_geographic_metrics(self, namespace: str) -> None:
+        """Collect geographic metrics (events by country, top attack sources)."""
+        try:
+            response = self.client.get_security_events_by_country_for_namespace(
+                namespace, self.SECURITY_EVENT_TYPES
+            )
+            self._process_country_aggregation(response, namespace)
+            self._process_attack_sources_aggregation(response, namespace)
+        except F5XCAPIError as e:
+            logger.warning(
+                "Failed to get geographic metrics",
                 namespace=namespace,
                 error=str(e)
             )
@@ -430,6 +458,100 @@ class SecurityCollector:
             except (ValueError, TypeError) as e:
                 logger.warning(
                     "Failed to parse DoS event count",
+                    count=count_str,
+                    error=str(e)
+                )
+
+    def _process_country_aggregation(
+        self,
+        data: Dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process events by country aggregation response.
+
+        Response structure:
+        {
+            "aggs": {
+                "by_country": {
+                    "field_aggregation": {
+                        "buckets": [
+                            {"key": "DE", "count": "1517"},
+                            {"key": "US", "count": "500"}
+                        ]
+                    }
+                }
+            }
+        }
+        """
+        aggs = data.get("aggs", {})
+        country_agg = aggs.get("by_country", {})
+        field_agg = country_agg.get("field_aggregation", {})
+        buckets = field_agg.get("buckets", [])
+
+        for bucket in buckets:
+            country = bucket.get("key", "unknown")
+            count_str = bucket.get("count", "0")
+
+            try:
+                count = float(count_str)
+                self.events_by_country.labels(
+                    namespace=namespace,
+                    country=country
+                ).set(count)
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    "Failed to parse country event count",
+                    country=country,
+                    count=count_str,
+                    error=str(e)
+                )
+
+    def _process_attack_sources_aggregation(
+        self,
+        data: Dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process top attack sources aggregation response.
+
+        Response structure:
+        {
+            "aggs": {
+                "top_attack_sources": {
+                    "multi_field_aggregation": {
+                        "buckets": [
+                            {
+                                "keys": {"country": "DE", "src_ip": "188.68.49.235"},
+                                "count": "1517"
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+        """
+        aggs = data.get("aggs", {})
+        sources_agg = aggs.get("top_attack_sources", {})
+        multi_field_agg = sources_agg.get("multi_field_aggregation", {})
+        buckets = multi_field_agg.get("buckets", [])
+
+        for bucket in buckets:
+            keys = bucket.get("keys", {})
+            country = keys.get("country", "unknown")
+            src_ip = keys.get("src_ip", "unknown")
+            count_str = bucket.get("count", "0")
+
+            try:
+                count = float(count_str)
+                self.top_attack_sources.labels(
+                    namespace=namespace,
+                    country=country,
+                    src_ip=src_ip
+                ).set(count)
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    "Failed to parse attack source count",
+                    country=country,
+                    src_ip=src_ip,
                     count=count_str,
                     error=str(e)
                 )

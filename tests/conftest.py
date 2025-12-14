@@ -55,6 +55,7 @@ def mock_client(test_config):
         client.get_app_firewall_metrics_for_namespace = Mock()
         client.get_malicious_bot_metrics_for_namespace = Mock()
         client.get_security_event_counts_for_namespace = Mock()
+        client.get_security_events_by_country_for_namespace = Mock()
 
         yield client
 
@@ -355,6 +356,43 @@ def sample_dos_events_response():
                         {
                             "key": "ves-io-http-loadbalancer-demo-shop-fe",
                             "count": "7"
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+
+@pytest.fixture
+def sample_country_attack_sources_response():
+    """Sample country and attack sources aggregation response."""
+    return {
+        "total_hits": "1517",
+        "aggs": {
+            "by_country": {
+                "field_aggregation": {
+                    "buckets": [
+                        {"key": "DE", "count": "1200"},
+                        {"key": "US", "count": "250"},
+                        {"key": "CN", "count": "67"}
+                    ]
+                }
+            },
+            "top_attack_sources": {
+                "multi_field_aggregation": {
+                    "buckets": [
+                        {
+                            "keys": {"country": "DE", "src_ip": "188.68.49.235"},
+                            "count": "1000"
+                        },
+                        {
+                            "keys": {"country": "US", "src_ip": "45.33.32.156"},
+                            "count": "200"
+                        },
+                        {
+                            "keys": {"country": "DE", "src_ip": "95.217.163.246"},
+                            "count": "150"
                         }
                     ]
                 }
