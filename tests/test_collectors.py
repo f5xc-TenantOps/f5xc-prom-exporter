@@ -1,16 +1,17 @@
 """Tests for metric collectors."""
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import Mock, patch
 from prometheus_client import CollectorRegistry
 
+from f5xc_exporter.client import F5XCAPIError
 from f5xc_exporter.collectors import (
+    LoadBalancerCollector,
     QuotaCollector,
     SecurityCollector,
     SyntheticMonitoringCollector,
-    LoadBalancerCollector,
 )
-from f5xc_exporter.client import F5XCAPIError
 
 
 class TestQuotaCollector:

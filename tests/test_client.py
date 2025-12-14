@@ -1,11 +1,17 @@
 """Tests for F5XC API client."""
 
 import json
+from unittest.mock import Mock
+
 import pytest
 import responses
-from unittest.mock import Mock, patch
 
-from f5xc_exporter.client import F5XCClient, F5XCAPIError, F5XCAuthenticationError, F5XCRateLimitError
+from f5xc_exporter.client import (
+    F5XCAPIError,
+    F5XCAuthenticationError,
+    F5XCClient,
+    F5XCRateLimitError,
+)
 
 
 class TestF5XCClient:

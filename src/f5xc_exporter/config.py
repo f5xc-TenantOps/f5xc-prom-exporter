@@ -1,9 +1,7 @@
 """Configuration management for F5XC Prometheus Exporter."""
 
-import os
-from typing import Optional
 
-from pydantic import Field, HttpUrl, ConfigDict
+from pydantic import ConfigDict, Field, HttpUrl
 from pydantic_settings import BaseSettings
 
 

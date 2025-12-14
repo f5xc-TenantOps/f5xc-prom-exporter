@@ -1,11 +1,11 @@
 """Quota metrics collector for F5XC."""
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 import structlog
 from prometheus_client import Gauge
 
-from ..client import F5XCClient, F5XCAPIError
+from ..client import F5XCAPIError, F5XCClient
 
 logger = structlog.get_logger()
 
@@ -85,7 +85,7 @@ class QuotaCollector:
             self.quota_collection_success.labels(namespace=namespace).set(0)
             raise
 
-    def _process_quota_data(self, quota_data: Dict[str, Any], namespace: str) -> None:
+    def _process_quota_data(self, quota_data: dict[str, Any], namespace: str) -> None:
         """Process quota usage data and update metrics."""
         logger.debug("Processing quota data", namespace=namespace, data_keys=list(quota_data.keys()))
 
@@ -102,7 +102,7 @@ class QuotaCollector:
             logger.debug("Processing objects section", count=len(quota_data["objects"]))
             self._process_f5xc_quota_section(quota_data["objects"], namespace, "object")
 
-    def _process_f5xc_quota_section(self, quota_section: Dict[str, Any], namespace: str, resource_type: str) -> None:
+    def _process_f5xc_quota_section(self, quota_section: dict[str, Any], namespace: str, resource_type: str) -> None:
         """Process F5XC quota section (quota_usage, resources, objects)."""
         for resource_name, quota_info in quota_section.items():
             if isinstance(quota_info, dict):
@@ -160,25 +160,25 @@ class QuotaCollector:
                             error=str(e)
                         )
 
-    def _process_quotas_list(self, quotas: List[Dict[str, Any]], namespace: str) -> None:
+    def _process_quotas_list(self, quotas: list[dict[str, Any]], namespace: str) -> None:
         """Process quota data in list format."""
         for quota in quotas:
             self._process_single_quota(quota, namespace)
 
-    def _process_usage_data(self, usage_data: Dict[str, Any], namespace: str) -> None:
+    def _process_usage_data(self, usage_data: dict[str, Any], namespace: str) -> None:
         """Process quota data in usage format."""
         for resource_type, resource_data in usage_data.items():
             if isinstance(resource_data, dict):
                 for resource_name, quota_info in resource_data.items():
                     self._process_quota_info(quota_info, namespace, resource_type, resource_name)
 
-    def _process_direct_quota_data(self, quota_data: Dict[str, Any], namespace: str) -> None:
+    def _process_direct_quota_data(self, quota_data: dict[str, Any], namespace: str) -> None:
         """Process direct quota data format."""
         for key, value in quota_data.items():
             if isinstance(value, dict) and ("limit" in value or "current" in value or "used" in value):
                 self._process_quota_info(value, namespace, "resource", key)
 
-    def _process_single_quota(self, quota: Dict[str, Any], namespace: str) -> None:
+    def _process_single_quota(self, quota: dict[str, Any], namespace: str) -> None:
         """Process a single quota entry."""
         resource_type = quota.get("type", "unknown")
         resource_name = quota.get("name", quota.get("resource", "unknown"))
@@ -187,7 +187,7 @@ class QuotaCollector:
 
     def _process_quota_info(
         self,
-        quota_info: Dict[str, Any],
+        quota_info: dict[str, Any],
         namespace: str,
         resource_type: str,
         resource_name: str
@@ -229,7 +229,7 @@ class QuotaCollector:
                 utilization=utilization,
             )
 
-    def _extract_numeric_value(self, data: Dict[str, Any], possible_keys: List[str]) -> Optional[float]:
+    def _extract_numeric_value(self, data: dict[str, Any], possible_keys: list[str]) -> Optional[float]:
         """Extract numeric value from data using possible keys."""
         for key in possible_keys:
             if key in data:

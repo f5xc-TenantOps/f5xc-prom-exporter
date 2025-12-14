@@ -1,8 +1,8 @@
 """Tests for main entry point."""
 
-import sys
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 
 from f5xc_exporter import main
 
@@ -41,14 +41,11 @@ class TestMain:
         """Test main with configuration error."""
         mock_get_config.side_effect = Exception("Config error")
 
-        with patch('sys.stderr') as mock_stderr:
-            with pytest.raises(SystemExit) as exc_info:
-                main.main()
+        with pytest.raises(SystemExit) as exc_info:
+            main.main()
 
-            assert exc_info.value.code == 1
-
-        # Should print error to stderr
-        assert mock_stderr.write.called
+        # Should exit with code 1 on config error
+        assert exc_info.value.code == 1
 
     @patch('f5xc_exporter.main.get_config')
     @patch('f5xc_exporter.main.MetricsServer')

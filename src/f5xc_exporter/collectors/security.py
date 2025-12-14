@@ -6,12 +6,12 @@ Collects security trend metrics from two F5 XC APIs:
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import structlog
 from prometheus_client import Gauge
 
-from ..client import F5XCClient, F5XCAPIError
+from ..client import F5XCAPIError, F5XCClient
 
 logger = structlog.get_logger()
 
@@ -245,7 +245,7 @@ class SecurityCollector:
 
     def _process_app_firewall_response(
         self,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         namespace: str
     ) -> None:
         """Process app firewall metrics response.
@@ -302,7 +302,7 @@ class SecurityCollector:
 
     def _process_malicious_bot_response(
         self,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         namespace: str
     ) -> None:
         """Process malicious bot metrics response."""
@@ -339,7 +339,7 @@ class SecurityCollector:
 
     def _process_event_aggregation(
         self,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         namespace: str
     ) -> None:
         """Process security events aggregation response.
@@ -408,7 +408,7 @@ class SecurityCollector:
 
     def _process_malicious_user_aggregation(
         self,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         namespace: str
     ) -> None:
         """Process malicious user events aggregation response."""
@@ -436,7 +436,7 @@ class SecurityCollector:
 
     def _process_dos_aggregation(
         self,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         namespace: str
     ) -> None:
         """Process DoS events aggregation response."""
@@ -464,7 +464,7 @@ class SecurityCollector:
 
     def _process_country_aggregation(
         self,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         namespace: str
     ) -> None:
         """Process events by country aggregation response.
@@ -508,7 +508,7 @@ class SecurityCollector:
 
     def _process_attack_sources_aggregation(
         self,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         namespace: str
     ) -> None:
         """Process top attack sources aggregation response.

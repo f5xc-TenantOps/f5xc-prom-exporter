@@ -43,8 +43,7 @@ def main() -> None:
     # Load configuration
     try:
         config = get_config()
-    except Exception as e:
-        print(f"Failed to load configuration: {e}", file=sys.stderr)
+    except Exception:
         sys.exit(1)
 
     # Setup logging

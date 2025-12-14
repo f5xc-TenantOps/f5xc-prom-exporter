@@ -5,12 +5,12 @@ per namespace, filtering by virtual_host_type.
 """
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import structlog
 from prometheus_client import Gauge
 
-from ..client import F5XCClient, F5XCAPIError
+from ..client import F5XCAPIError, F5XCClient
 
 logger = structlog.get_logger()
 
@@ -278,7 +278,7 @@ class LoadBalancerCollector:
             self.collection_success.set(0)
             raise
 
-    def _process_response(self, data: Dict[str, Any]) -> Dict[str, int]:
+    def _process_response(self, data: dict[str, Any]) -> dict[str, int]:
         """Process the API response and update Prometheus metrics.
 
         Returns:
@@ -289,7 +289,7 @@ class LoadBalancerCollector:
 
         logger.debug("Processing LB nodes", node_count=len(nodes))
 
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
 
         for node in nodes:
             lb_type = self._process_node(node)
@@ -298,7 +298,7 @@ class LoadBalancerCollector:
 
         return counts
 
-    def _process_node(self, node: Dict[str, Any]) -> Optional[str]:
+    def _process_node(self, node: dict[str, Any]) -> Optional[str]:
         """Process a single node from the response.
 
         Returns:
@@ -337,7 +337,7 @@ class LoadBalancerCollector:
 
     def _process_metric(
         self,
-        metric: Dict[str, Any],
+        metric: dict[str, Any],
         namespace: str,
         load_balancer: str,
         site: str,

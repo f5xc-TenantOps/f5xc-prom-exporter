@@ -1,19 +1,18 @@
 """Prometheus metrics HTTP server."""
 
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 
 import structlog
-from prometheus_client import CollectorRegistry, CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 
 from .client import F5XCClient
 from .collectors import (
+    LoadBalancerCollector,
     QuotaCollector,
     SecurityCollector,
     SyntheticMonitoringCollector,
-    LoadBalancerCollector,
 )
 from .config import Config
 
@@ -172,7 +171,7 @@ class MetricsServer:
         self.registry.register(self.lb_collector.udp_lb_count)
 
         # Collection threads
-        self.collection_threads: Dict[str, threading.Thread] = {}
+        self.collection_threads: dict[str, threading.Thread] = {}
         self.stop_event = threading.Event()
 
         # HTTP server
@@ -343,7 +342,7 @@ class MetricsServer:
 
         logger.info("F5XC Prometheus exporter stopped")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get server status information."""
         lb_interval = min(
             self.config.f5xc_http_lb_interval,

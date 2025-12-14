@@ -1,13 +1,14 @@
 """Tests for metrics server integration."""
 
-import pytest
 import threading
 import time
-import requests
 from unittest.mock import Mock, patch
 
-from f5xc_exporter.metrics_server import MetricsServer
+import pytest
+import requests
+
 from f5xc_exporter.config import Config
+from f5xc_exporter.metrics_server import MetricsServer
 
 
 class TestMetricsServerIntegration:

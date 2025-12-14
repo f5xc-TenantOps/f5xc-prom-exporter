@@ -1,11 +1,12 @@
 """Pytest configuration and fixtures."""
 
 import os
-import pytest
 from unittest.mock import Mock, patch
 
-from f5xc_exporter.config import Config
+import pytest
+
 from f5xc_exporter.client import F5XCClient
+from f5xc_exporter.config import Config
 
 
 @pytest.fixture
