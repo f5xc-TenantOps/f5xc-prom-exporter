@@ -1,5 +1,6 @@
 """Main entry point for F5XC Prometheus exporter."""
 
+import logging
 import signal
 import sys
 
@@ -30,7 +31,6 @@ def setup_logging(log_level: str) -> None:
     )
 
     # Set log level
-    import logging
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
@@ -72,6 +72,10 @@ def main() -> None:
 
     try:
         server.start()
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt, shutting down")
+        server.stop()
+        sys.exit(0)
     except Exception as e:
         logger.error("Failed to start metrics server", error=str(e), exc_info=True)
         sys.exit(1)

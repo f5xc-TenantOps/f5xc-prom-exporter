@@ -14,17 +14,48 @@ class TestMetricsServerIntegration:
     """Test metrics server integration scenarios."""
 
     @pytest.fixture
-    def test_config(self):
-        """Test configuration with unique port."""
+    def test_config_8081(self):
+        """Test configuration with port 8081."""
         return Config(
-            f5xc_tenant_url="https://test.console.ves.volterra.io",
-            f5xc_access_token="test-token",
-            f5xc_exp_http_port=8081,  # Use different port to avoid conflicts
-            f5xc_exp_log_level="DEBUG",
+            F5XC_TENANT_URL="https://test.console.ves.volterra.io",
+            F5XC_ACCESS_TOKEN="test-token",
+            F5XC_EXP_HTTP_PORT=8081,
+            F5XC_EXP_LOG_LEVEL="DEBUG",
         )
 
-    def test_metrics_server_http_endpoint_integration(self, test_config):
+    @pytest.fixture
+    def test_config_8082(self):
+        """Test configuration with port 8082."""
+        return Config(
+            F5XC_TENANT_URL="https://test.console.ves.volterra.io",
+            F5XC_ACCESS_TOKEN="test-token",
+            F5XC_EXP_HTTP_PORT=8082,
+            F5XC_EXP_LOG_LEVEL="DEBUG",
+        )
+
+    @pytest.fixture
+    def test_config_8083(self):
+        """Test configuration with port 8083."""
+        return Config(
+            F5XC_TENANT_URL="https://test.console.ves.volterra.io",
+            F5XC_ACCESS_TOKEN="test-token",
+            F5XC_EXP_HTTP_PORT=8083,
+            F5XC_EXP_LOG_LEVEL="DEBUG",
+        )
+
+    @pytest.fixture
+    def test_config_8084(self):
+        """Test configuration with port 8084."""
+        return Config(
+            F5XC_TENANT_URL="https://test.console.ves.volterra.io",
+            F5XC_ACCESS_TOKEN="test-token",
+            F5XC_EXP_HTTP_PORT=8084,
+            F5XC_EXP_LOG_LEVEL="DEBUG",
+        )
+
+    def test_metrics_server_http_endpoint_integration(self, test_config_8081):
         """Test complete metrics server with real HTTP endpoint."""
+        test_config = test_config_8081
         # Mock the F5XC client to avoid real API calls
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
             mock_client = Mock()
@@ -40,24 +71,21 @@ class TestMetricsServerIntegration:
                 }
             }
 
-            mock_client.get_service_graph_data.return_value = {
-                "nodes": [
-                    {
-                        "type": "load_balancer",
-                        "name": "test-lb",
-                        "stats": {
-                            "http": {
-                                "response_classes": {"2xx": 1000},
-                                "active_connections": 25
-                            }
-                        }
-                    }
-                ]
+            mock_client.list_namespaces.return_value = ["test-ns"]
+            mock_client.get_all_lb_metrics_for_namespace.return_value = {
+                "http": [],
+                "tcp": [],
+                "udp": []
             }
 
-            # Mock failing security endpoints (like in real logs)
-            mock_client.get_waf_metrics.side_effect = Exception("404 Not Found")
-            mock_client.get_synthetic_monitoring_metrics.side_effect = Exception("404 Not Found")
+            # Mock security API calls
+            mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
+            mock_client.get_malicious_bot_metrics_for_namespace.return_value = {"data": []}
+            mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
+            mock_client.get_security_events_by_country_for_namespace.return_value = {"aggs": {}}
+
+            # Mock synthetic monitoring
+            mock_client.get_synthetic_monitoring_metrics.return_value = {"monitors": []}
 
             # Create and start metrics server
             server = MetricsServer(test_config)
@@ -93,11 +121,10 @@ class TestMetricsServerIntegration:
                 assert 'f5xc_quota_utilization' in metrics_text
                 assert 'f5xc_quota_collection_success' in metrics_text
 
-                # Verify service graph metrics
-                assert 'f5xc_service_graph_http_requests_total' in metrics_text
-                assert 'f5xc_service_graph_collection_success' in metrics_text
+                # Verify LB metrics registration
+                assert 'f5xc_http_lb_request_rate' in metrics_text
 
-                # Verify security collection success metrics (even if endpoints fail)
+                # Verify security collection success metrics
                 assert 'f5xc_security_collection_success' in metrics_text
                 assert 'f5xc_synthetic_collection_success' in metrics_text
 
@@ -107,9 +134,11 @@ class TestMetricsServerIntegration:
             finally:
                 # Clean up
                 server.stop()
+                time.sleep(0.5)
 
-    def test_metrics_server_registry_initialization(self, test_config):
+    def test_metrics_server_registry_initialization(self, test_config_8082):
         """Test that metrics server properly initializes Prometheus registry."""
+        test_config = test_config_8082
         from prometheus_client import generate_latest
 
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
@@ -124,7 +153,7 @@ class TestMetricsServerIntegration:
 
             # Test that collectors are created
             assert server.quota_collector is not None
-            assert server.service_graph_collector is not None
+            assert server.lb_collector is not None
             assert server.security_collector is not None
             assert server.synthetic_monitoring_collector is not None
 
@@ -136,12 +165,13 @@ class TestMetricsServerIntegration:
             # Should contain metric metadata even without data
             metrics_str = metrics_output.decode('utf-8')
             assert 'f5xc_quota_limit' in metrics_str
-            assert 'f5xc_service_graph_http_requests_total' in metrics_str
+            assert 'f5xc_http_lb_request_rate' in metrics_str
             assert 'f5xc_security_collection_success' in metrics_str
             assert 'f5xc_synthetic_collection_success' in metrics_str
 
-    def test_metrics_endpoint_error_handling(self, test_config):
+    def test_metrics_endpoint_error_handling(self, test_config_8083):
         """Test metrics endpoint handles registry errors gracefully."""
+        test_config = test_config_8083
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
             mock_client = Mock()
             mock_client_class.return_value = mock_client
@@ -154,8 +184,10 @@ class TestMetricsServerIntegration:
             time.sleep(0.5)
 
             try:
-                # Simulate registry error by corrupting it
-                server.registry = None
+                # Simulate registry error by corrupting it on the httpd
+                # (server.registry change alone won't affect the httpd reference)
+                if server.httpd:
+                    server.httpd.registry = None
 
                 # Test that metrics endpoint returns 500 but doesn't crash
                 metrics_response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/metrics", timeout=5)
@@ -167,9 +199,11 @@ class TestMetricsServerIntegration:
 
             finally:
                 server.stop()
+                time.sleep(0.5)
 
-    def test_404_endpoint(self, test_config):
+    def test_404_endpoint(self, test_config_8084):
         """Test that unknown endpoints return 404."""
+        test_config = test_config_8084
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
             mock_client = Mock()
             mock_client_class.return_value = mock_client
@@ -186,3 +220,4 @@ class TestMetricsServerIntegration:
 
             finally:
                 server.stop()
+                time.sleep(0.5)
