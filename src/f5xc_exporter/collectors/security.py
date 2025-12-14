@@ -415,7 +415,7 @@ class SecurityCollector:
         buckets = field_agg.get("buckets", [])
 
         # Sum up all malicious user events for this namespace
-        total_count = 0
+        total_count: float = 0.0
         for bucket in buckets:
             count_str = bucket.get("count", "0")
             try:
@@ -452,7 +452,7 @@ class SecurityCollector:
         buckets = field_agg.get("buckets", [])
 
         # Sum up all DoS-related events for this namespace
-        total_count = 0
+        total_count: float = 0.0
         for bucket in buckets:
             count_str = bucket.get("count", "0")
             try:
