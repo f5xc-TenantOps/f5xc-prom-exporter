@@ -43,6 +43,8 @@ def mock_client(test_config):
         client.get_synthetic_monitoring_summary = Mock()
         client.get_http_monitors_health = Mock()
         client.get_http_lb_metrics = Mock()
+        client.get_tcp_lb_metrics = Mock()
+        client.get_udp_lb_metrics = Mock()
 
         yield client
 
@@ -289,6 +291,134 @@ def sample_http_lb_response():
                                     "type": "HTTP_RESPONSE_LATENCY",
                                     "value": {
                                         "raw": [{"timestamp": 1234567890, "value": 0.030}]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            ],
+            "edges": []
+        }
+    }
+
+
+@pytest.fixture
+def sample_tcp_lb_response():
+    """Sample TCP LB metrics API response - matches QueryAllNamespaces structure."""
+    return {
+        "data": {
+            "nodes": [
+                {
+                    "id": {
+                        "namespace": "prod",
+                        "vhost": "tcp-backend",
+                        "site": "ce-site-1"
+                    },
+                    "data": {
+                        "metric": {
+                            "downstream": [
+                                {
+                                    "type": "TCP_CONNECTION_RATE",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 50.0}]
+                                    }
+                                },
+                                {
+                                    "type": "TCP_ERROR_RATE",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 1.5}]
+                                    }
+                                },
+                                {
+                                    "type": "TCP_ERROR_RATE_CLIENT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.5}]
+                                    }
+                                },
+                                {
+                                    "type": "TCP_ERROR_RATE_UPSTREAM",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 1.0}]
+                                    }
+                                },
+                                {
+                                    "type": "TCP_CONNECTION_DURATION",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 30.5}]
+                                    }
+                                },
+                                {
+                                    "type": "REQUEST_THROUGHPUT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 500000}]
+                                    }
+                                },
+                                {
+                                    "type": "RESPONSE_THROUGHPUT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 2000000}]
+                                    }
+                                },
+                                {
+                                    "type": "CLIENT_RTT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.008}]
+                                    }
+                                },
+                                {
+                                    "type": "SERVER_RTT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.003}]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            ],
+            "edges": []
+        }
+    }
+
+
+@pytest.fixture
+def sample_udp_lb_response():
+    """Sample UDP LB metrics API response - matches QueryAllNamespaces structure."""
+    return {
+        "data": {
+            "nodes": [
+                {
+                    "id": {
+                        "namespace": "prod",
+                        "vhost": "udp-dns-lb",
+                        "site": "ce-site-1"
+                    },
+                    "data": {
+                        "metric": {
+                            "downstream": [
+                                {
+                                    "type": "REQUEST_THROUGHPUT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 100000}]
+                                    }
+                                },
+                                {
+                                    "type": "RESPONSE_THROUGHPUT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 200000}]
+                                    }
+                                },
+                                {
+                                    "type": "CLIENT_RTT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.005}]
+                                    }
+                                },
+                                {
+                                    "type": "SERVER_RTT",
+                                    "value": {
+                                        "raw": [{"timestamp": 1234567890, "value": 0.002}]
                                     }
                                 }
                             ]

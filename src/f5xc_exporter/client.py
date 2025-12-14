@@ -307,6 +307,101 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
+    def get_tcp_lb_metrics(self, step_seconds: int = 120) -> Dict[str, Any]:
+        """Get TCP load balancer metrics across all namespaces.
+
+        Uses QueryAllNamespaces API: /api/data/namespaces/system/graph/all_ns_service
+        Returns metrics for all TCP load balancers across all namespaces in a single call.
+
+        Args:
+            step_seconds: Time step for metrics aggregation (default: 120s)
+
+        Returns:
+            Response containing nodes with TCP LB metrics grouped by namespace, vhost, and site
+        """
+        endpoint = "/api/data/namespaces/system/graph/all_ns_service"
+
+        end_time = int(time.time())
+        start_time = end_time - step_seconds
+
+        payload = {
+            "field_selector": {
+                "node": {
+                    "metric": {
+                        "downstream": [
+                            "TCP_CONNECTION_RATE",
+                            "TCP_ERROR_RATE",
+                            "TCP_ERROR_RATE_CLIENT",
+                            "TCP_ERROR_RATE_UPSTREAM",
+                            "TCP_CONNECTION_DURATION",
+                            "REQUEST_THROUGHPUT",
+                            "RESPONSE_THROUGHPUT",
+                            "CLIENT_RTT",
+                            "SERVER_RTT"
+                        ]
+                    }
+                }
+            },
+            "step": f"{step_seconds}s",
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            "label_filter": [
+                {
+                    "label": "LABEL_VHOST_TYPE",
+                    "op": "EQ",
+                    "value": "TCP_LOAD_BALANCER"
+                }
+            ],
+            "group_by": ["NAMESPACE", "VHOST", "SITE"]
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_udp_lb_metrics(self, step_seconds: int = 120) -> Dict[str, Any]:
+        """Get UDP load balancer metrics across all namespaces.
+
+        Uses QueryAllNamespaces API: /api/data/namespaces/system/graph/all_ns_service
+        Returns metrics for all UDP load balancers across all namespaces in a single call.
+
+        Args:
+            step_seconds: Time step for metrics aggregation (default: 120s)
+
+        Returns:
+            Response containing nodes with UDP LB metrics grouped by namespace, vhost, and site
+        """
+        endpoint = "/api/data/namespaces/system/graph/all_ns_service"
+
+        end_time = int(time.time())
+        start_time = end_time - step_seconds
+
+        payload = {
+            "field_selector": {
+                "node": {
+                    "metric": {
+                        "downstream": [
+                            "REQUEST_THROUGHPUT",
+                            "RESPONSE_THROUGHPUT",
+                            "CLIENT_RTT",
+                            "SERVER_RTT"
+                        ]
+                    }
+                }
+            },
+            "step": f"{step_seconds}s",
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            "label_filter": [
+                {
+                    "label": "LABEL_VHOST_TYPE",
+                    "op": "EQ",
+                    "value": "UDP_LOAD_BALANCER"
+                }
+            ],
+            "group_by": ["NAMESPACE", "VHOST", "SITE"]
+        }
+
+        return self.post(endpoint, json=payload)
+
     def close(self) -> None:
         """Close the session."""
         self.session.close()

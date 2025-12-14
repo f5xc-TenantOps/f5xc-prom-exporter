@@ -255,6 +255,68 @@ class TestF5XCClient:
         assert "VHOST" in request_body["group_by"]
         assert "SITE" in request_body["group_by"]
 
+    @responses.activate
+    def test_get_tcp_lb_metrics(self, test_config, sample_tcp_lb_response):
+        """Test TCP LB metrics API method with QueryAllNamespaces endpoint."""
+        responses.add(
+            responses.POST,
+            "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/all_ns_service",
+            json=sample_tcp_lb_response,
+            status=200
+        )
+
+        client = F5XCClient(test_config)
+        result = client.get_tcp_lb_metrics()
+
+        assert result == sample_tcp_lb_response
+        assert len(responses.calls) == 1
+
+        # Check POST payload contains expected fields
+        import json
+        request_body = json.loads(responses.calls[0].request.body)
+        assert "field_selector" in request_body
+        assert "node" in request_body["field_selector"]
+        assert "downstream" in request_body["field_selector"]["node"]["metric"]
+        assert "TCP_CONNECTION_RATE" in request_body["field_selector"]["node"]["metric"]["downstream"]
+        assert "label_filter" in request_body
+        assert request_body["label_filter"][0]["label"] == "LABEL_VHOST_TYPE"
+        assert request_body["label_filter"][0]["value"] == "TCP_LOAD_BALANCER"
+        assert "group_by" in request_body
+        assert "NAMESPACE" in request_body["group_by"]
+        assert "VHOST" in request_body["group_by"]
+        assert "SITE" in request_body["group_by"]
+
+    @responses.activate
+    def test_get_udp_lb_metrics(self, test_config, sample_udp_lb_response):
+        """Test UDP LB metrics API method with QueryAllNamespaces endpoint."""
+        responses.add(
+            responses.POST,
+            "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/all_ns_service",
+            json=sample_udp_lb_response,
+            status=200
+        )
+
+        client = F5XCClient(test_config)
+        result = client.get_udp_lb_metrics()
+
+        assert result == sample_udp_lb_response
+        assert len(responses.calls) == 1
+
+        # Check POST payload contains expected fields
+        import json
+        request_body = json.loads(responses.calls[0].request.body)
+        assert "field_selector" in request_body
+        assert "node" in request_body["field_selector"]
+        assert "downstream" in request_body["field_selector"]["node"]["metric"]
+        assert "REQUEST_THROUGHPUT" in request_body["field_selector"]["node"]["metric"]["downstream"]
+        assert "label_filter" in request_body
+        assert request_body["label_filter"][0]["label"] == "LABEL_VHOST_TYPE"
+        assert request_body["label_filter"][0]["value"] == "UDP_LOAD_BALANCER"
+        assert "group_by" in request_body
+        assert "NAMESPACE" in request_body["group_by"]
+        assert "VHOST" in request_body["group_by"]
+        assert "SITE" in request_body["group_by"]
+
     def test_client_close(self, test_config):
         """Test client close method."""
         client = F5XCClient(test_config)
