@@ -1,12 +1,12 @@
 """Synthetic monitoring metrics collector for F5XC."""
 
-from typing import Any, Dict, List, Optional
 import time
+from typing import Any
 
 import structlog
-from prometheus_client import Gauge, Counter
+from prometheus_client import Counter, Gauge
 
-from ..client import F5XCClient, F5XCAPIError
+from ..client import F5XCAPIError, F5XCClient
 
 logger = structlog.get_logger()
 
@@ -129,26 +129,44 @@ class SyntheticMonitoringCollector:
     def collect_metrics(self, namespace: str = "system") -> None:
         """Collect synthetic monitoring metrics for the specified namespace."""
         start_time = time.time()
+        collection_success = True
 
         try:
             logger.info("Collecting synthetic monitoring metrics", namespace=namespace)
 
-            # Get synthetic monitoring data
-            synthetic_data = self.client.get_synthetic_monitoring_metrics(namespace)
+            # Try to get synthetic monitoring health data using correct API endpoint
+            try:
+                health_data = self.client.get_synthetic_monitoring_health(namespace)
+                self._process_health_data(health_data, namespace)
+            except F5XCAPIError as e:
+                logger.warning("Failed to get synthetic monitoring health", namespace=namespace, error=str(e))
+                collection_success = False
 
-            # Process synthetic monitoring data
-            self._process_synthetic_monitoring_data(synthetic_data, namespace)
+            # Try to get HTTP monitors health
+            try:
+                http_health_data = self.client.get_http_monitors_health(namespace)
+                self._process_http_monitors_health(http_health_data, namespace)
+            except F5XCAPIError as e:
+                logger.warning("Failed to get HTTP monitors health", namespace=namespace, error=str(e))
 
-            # Mark collection as successful
-            self.synthetic_collection_success.labels(namespace=namespace).set(1)
+            # Try to get global summary
+            try:
+                summary_data = self.client.get_synthetic_monitoring_summary(namespace)
+                self._process_summary_data(summary_data, namespace)
+            except F5XCAPIError as e:
+                logger.warning("Failed to get synthetic monitoring summary", namespace=namespace, error=str(e))
+
+            # Mark collection as successful if at least one API call worked
+            self.synthetic_collection_success.labels(namespace=namespace).set(1 if collection_success else 0)
 
             collection_duration = time.time() - start_time
             self.synthetic_collection_duration.labels(namespace=namespace).set(collection_duration)
 
             logger.info(
-                "Synthetic monitoring metrics collection successful",
+                "Synthetic monitoring metrics collection complete",
                 namespace=namespace,
                 duration=collection_duration,
+                success=collection_success,
             )
 
         except F5XCAPIError as e:
@@ -161,8 +179,108 @@ class SyntheticMonitoringCollector:
             self.synthetic_collection_success.labels(namespace=namespace).set(0)
             raise
 
-    def _process_synthetic_monitoring_data(self, data: Dict[str, Any], namespace: str) -> None:
-        """Process synthetic monitoring data and update metrics."""
+    def _process_health_data(self, data: dict[str, Any], namespace: str) -> None:
+        """Process synthetic monitoring health data from the correct API."""
+        logger.debug("Processing synthetic monitoring health data", namespace=namespace, keys=list(data.keys()))
+
+        # Health data structure varies - log it for debugging
+        monitors = data.get("monitors", data.get("items", []))
+
+        for monitor in monitors:
+            monitor_name = monitor.get("name", monitor.get("monitor_name", "unknown"))
+            status = monitor.get("status", monitor.get("health", "unknown"))
+            monitor_type = monitor.get("type", monitor.get("monitor_type", "http"))
+
+            # Map status to success value
+            is_healthy = status.lower() in ("healthy", "up", "success", "ok", "1")
+
+            if monitor_type.lower() in ("http", "https"):
+                self.http_check_success.labels(
+                    namespace=namespace,
+                    monitor_name=monitor_name,
+                    location="global",
+                    target_url=monitor.get("target", monitor.get("url", "unknown"))
+                ).set(1 if is_healthy else 0)
+            elif monitor_type.lower() == "dns":
+                self.dns_check_success.labels(
+                    namespace=namespace,
+                    monitor_name=monitor_name,
+                    location="global",
+                    target_domain=monitor.get("target", monitor.get("domain", "unknown"))
+                ).set(1 if is_healthy else 0)
+
+    def _process_http_monitors_health(self, data: dict[str, Any], namespace: str) -> None:
+        """Process HTTP monitors health data from the correct API."""
+        logger.debug("Processing HTTP monitors health data", namespace=namespace, keys=list(data.keys()))
+
+        monitors = data.get("monitors", data.get("items", data.get("health", [])))
+
+        for monitor in monitors:
+            monitor_name = monitor.get("name", monitor.get("monitor_name", "unknown"))
+            target_url = monitor.get("target", monitor.get("url", monitor.get("target_url", "unknown")))
+
+            # Get health status
+            is_healthy = monitor.get("healthy", monitor.get("status", "")) in (True, "healthy", "up", "ok")
+
+            self.http_check_success.labels(
+                namespace=namespace,
+                monitor_name=monitor_name,
+                location="global",
+                target_url=target_url
+            ).set(1 if is_healthy else 0)
+
+            # Get response time if available
+            response_time = monitor.get("response_time", monitor.get("latency", monitor.get("avg_response_time")))
+            if response_time is not None:
+                try:
+                    # Convert to seconds if in milliseconds
+                    response_time_sec = float(response_time)
+                    if response_time_sec > 100:  # Likely in milliseconds
+                        response_time_sec = response_time_sec / 1000.0
+                    self.http_check_response_time.labels(
+                        namespace=namespace,
+                        monitor_name=monitor_name,
+                        location="global",
+                        target_url=target_url
+                    ).set(response_time_sec)
+                except (ValueError, TypeError):
+                    pass
+
+    def _process_summary_data(self, data: dict[str, Any], namespace: str) -> None:
+        """Process synthetic monitoring global summary data."""
+        logger.debug("Processing synthetic monitoring summary data", namespace=namespace, keys=list(data.keys()))
+
+        # Extract summary statistics
+        total_monitors = data.get("total_monitors", data.get("count", 0))
+        healthy_monitors = data.get("healthy_monitors", data.get("healthy", 0))
+        data.get("unhealthy_monitors", data.get("unhealthy", 0))
+
+        # Calculate uptime percentage if we have data
+        if total_monitors and total_monitors > 0:
+            uptime_pct = (healthy_monitors / total_monitors) * 100
+            self.synthetic_uptime_percentage.labels(
+                namespace=namespace,
+                monitor_name="global",
+                location="all"
+            ).set(uptime_pct)
+
+        # Process individual monitor summaries if available
+        monitors = data.get("monitors", data.get("items", []))
+        for monitor in monitors:
+            monitor_name = monitor.get("name", "unknown")
+            uptime = monitor.get("uptime", monitor.get("uptime_percentage", 0))
+
+            try:
+                self.synthetic_uptime_percentage.labels(
+                    namespace=namespace,
+                    monitor_name=monitor_name,
+                    location="global"
+                ).set(float(uptime))
+            except (ValueError, TypeError):
+                pass
+
+    def _process_synthetic_monitoring_data(self, data: dict[str, Any], namespace: str) -> None:
+        """Process synthetic monitoring data and update metrics (legacy method)."""
         logger.debug("Processing synthetic monitoring data", namespace=namespace)
 
         # Process HTTP monitors
@@ -190,7 +308,7 @@ class SyntheticMonitoringCollector:
         for stats in aggregate_stats:
             self._process_aggregate_stats(stats, namespace)
 
-    def _process_http_monitor(self, monitor: Dict[str, Any], namespace: str) -> None:
+    def _process_http_monitor(self, monitor: dict[str, Any], namespace: str) -> None:
         """Process HTTP monitor data."""
         monitor_name = monitor.get("name", "unknown")
         target_url = monitor.get("target_url", "unknown")
@@ -265,7 +383,7 @@ class SyntheticMonitoringCollector:
                 status=status
             )._value._value += 1
 
-    def _process_dns_monitor(self, monitor: Dict[str, Any], namespace: str) -> None:
+    def _process_dns_monitor(self, monitor: dict[str, Any], namespace: str) -> None:
         """Process DNS monitor data."""
         monitor_name = monitor.get("name", "unknown")
         target_domain = monitor.get("target_domain", "unknown")
@@ -297,7 +415,7 @@ class SyntheticMonitoringCollector:
                 pass
 
             # Process DNS records
-            record_counts = {}
+            record_counts: dict[str, int] = {}
             for record in records:
                 record_type = record.get("type", "unknown")
                 record_counts[record_type] = record_counts.get(record_type, 0) + 1
@@ -320,7 +438,7 @@ class SyntheticMonitoringCollector:
                 status=status
             )._value._value += 1
 
-    def _process_tcp_monitor(self, monitor: Dict[str, Any], namespace: str) -> None:
+    def _process_tcp_monitor(self, monitor: dict[str, Any], namespace: str) -> None:
         """Process TCP monitor data."""
         monitor_name = monitor.get("name", "unknown")
         target_host = monitor.get("target_host", "unknown")
@@ -362,7 +480,7 @@ class SyntheticMonitoringCollector:
                 status=status
             )._value._value += 1
 
-    def _process_ping_monitor(self, monitor: Dict[str, Any], namespace: str) -> None:
+    def _process_ping_monitor(self, monitor: dict[str, Any], namespace: str) -> None:
         """Process Ping monitor data."""
         monitor_name = monitor.get("name", "unknown")
         target_host = monitor.get("target_host", "unknown")
@@ -413,7 +531,7 @@ class SyntheticMonitoringCollector:
                 status=status
             )._value._value += 1
 
-    def _process_aggregate_stats(self, stats: Dict[str, Any], namespace: str) -> None:
+    def _process_aggregate_stats(self, stats: dict[str, Any], namespace: str) -> None:
         """Process aggregate statistics."""
         monitor_name = stats.get("monitor_name", "unknown")
         location = stats.get("location", "unknown")

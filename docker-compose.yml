@@ -1,7 +1,22 @@
-version: '3.8'
+# F5 Distributed Cloud Prometheus Exporter
+#
+# Uses the published container image from GitHub Container Registry.
+# Note: If GHCR image is not available, uncomment the build section below.
+#
+# Image selection:
+#   - Default: uses 'latest' stable image
+#   - Staging: set F5XC_IMAGE_TAG=staging for development builds
+#   - Local dev: uncomment build directive below
+#
+# Examples:
+#   docker-compose up -d                           # latest stable
+#   F5XC_IMAGE_TAG=staging docker-compose up -d   # staging build
 
 services:
   f5xc-exporter:
+    # image: ghcr.io/f5xc-tenantops/f5xc-prom-exporter:${F5XC_IMAGE_TAG:-latest}
+    # platform: linux/amd64  # Specify platform explicitly
+    # Use local build until GHCR access is resolved:
     build:
       context: .
       dockerfile: Dockerfile

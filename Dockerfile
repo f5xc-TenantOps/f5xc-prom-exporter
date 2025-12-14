@@ -9,8 +9,9 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY pyproject.toml ./
+# Copy project files needed for installation
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
 
 # Install dependencies to a local directory
 RUN pip install --user .

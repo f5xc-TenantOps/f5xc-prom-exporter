@@ -1,16 +1,14 @@
 """Configuration management for F5XC Prometheus Exporter."""
 
-import os
-from typing import Optional
 
-from pydantic import Field, HttpUrl, ConfigDict
-from pydantic_settings import BaseSettings
+from pydantic import Field, HttpUrl
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Config(BaseSettings):
     """Configuration for F5XC Prometheus Exporter."""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore"
@@ -31,7 +29,7 @@ class Config(BaseSettings):
     f5xc_tcp_lb_interval: int = Field(default=120, alias="F5XC_TCP_LB_INTERVAL")
     f5xc_udp_lb_interval: int = Field(default=120, alias="F5XC_UDP_LB_INTERVAL")
     f5xc_dns_health_interval: int = Field(default=60, alias="F5XC_DNS_HEALTH_INTERVAL")
-    f5xc_security_interval: int = Field(default=180, alias="F5XC_SECURITY_INTERVAL")
+    f5xc_security_interval: int = Field(default=300, alias="F5XC_SECURITY_INTERVAL")
     f5xc_bot_defense_interval: int = Field(default=300, alias="F5XC_BOT_DEFENSE_INTERVAL")
     f5xc_synthetic_interval: int = Field(default=120, alias="F5XC_SYNTHETIC_INTERVAL")
 
@@ -54,5 +52,5 @@ class Config(BaseSettings):
 
 
 def get_config() -> Config:
-    """Get configuration instance."""
-    return Config()
+    """Get configuration instance from environment variables."""
+    return Config()  # type: ignore[call-arg]

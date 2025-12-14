@@ -1,13 +1,13 @@
 """Metric collectors for F5XC."""
 
+from .loadbalancer import LoadBalancerCollector
 from .quota import QuotaCollector
-from .service_graph import ServiceGraphCollector
 from .security import SecurityCollector
 from .synthetic_monitoring import SyntheticMonitoringCollector
 
 __all__ = [
     "QuotaCollector",
-    "ServiceGraphCollector",
     "SecurityCollector",
-    "SyntheticMonitoringCollector"
+    "SyntheticMonitoringCollector",
+    "LoadBalancerCollector",
 ]

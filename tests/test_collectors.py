@@ -1,16 +1,17 @@
 """Tests for metric collectors."""
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import Mock, patch
 from prometheus_client import CollectorRegistry
 
-from f5xc_exporter.collectors import (
-    QuotaCollector,
-    ServiceGraphCollector,
-    SecurityCollector,
-    SyntheticMonitoringCollector
-)
 from f5xc_exporter.client import F5XCAPIError
+from f5xc_exporter.collectors import (
+    LoadBalancerCollector,
+    QuotaCollector,
+    SecurityCollector,
+    SyntheticMonitoringCollector,
+)
 
 
 class TestQuotaCollector:
@@ -75,45 +76,6 @@ class TestQuotaCollector:
         assert lb_util._value._value == 50.0  # 5/10 * 100
 
 
-class TestServiceGraphCollector:
-    """Test service graph metrics collector."""
-
-    def test_service_graph_collector_initialization(self, mock_client):
-        """Test service graph collector initializes correctly."""
-        collector = ServiceGraphCollector(mock_client)
-
-        assert collector.client == mock_client
-        assert collector.http_requests_total is not None
-        assert collector.http_request_duration is not None
-        assert collector.tcp_connections_total is not None
-
-    def test_service_graph_metrics_collection(self, mock_client, sample_service_graph_response):
-        """Test service graph metrics collection."""
-        mock_client.get_service_graph_data.return_value = sample_service_graph_response
-
-        collector = ServiceGraphCollector(mock_client)
-        collector.collect_metrics("system")
-
-        mock_client.get_service_graph_data.assert_called_once_with("system")
-
-        # Check success metric
-        success_metric = collector.service_graph_collection_success.labels(namespace="system")
-        assert success_metric._value._value == 1
-
-    def test_http_stats_processing(self, mock_client, sample_service_graph_response):
-        """Test HTTP statistics processing."""
-        mock_client.get_service_graph_data.return_value = sample_service_graph_response
-
-        collector = ServiceGraphCollector(mock_client)
-        collector.collect_metrics("system")
-
-        # Check HTTP request metrics
-        requests_2xx = collector.http_requests_total.labels(
-            namespace="system", load_balancer="test-lb", backend="frontend", response_class="2xx"
-        )
-        assert requests_2xx._value._value == 1000.0
-
-
 class TestSecurityCollector:
     """Test security metrics collector."""
 
@@ -122,37 +84,252 @@ class TestSecurityCollector:
         collector = SecurityCollector(mock_client)
 
         assert collector.client == mock_client
-        assert collector.waf_requests_total is not None
-        assert collector.bot_requests_total is not None
-        assert collector.security_events_total is not None
+        # App Firewall metrics (API 1)
+        assert collector.total_requests is not None
+        assert collector.attacked_requests is not None
+        assert collector.bot_detections is not None
+        assert collector.malicious_bot_detections is not None
+        # Security event counts (API 2)
+        assert collector.waf_events is not None
+        assert collector.bot_defense_events is not None
+        assert collector.api_events is not None
+        assert collector.service_policy_events is not None
+        assert collector.malicious_user_events is not None
+        assert collector.dos_events is not None
+        # Collection status
+        assert collector.collection_success is not None
+        assert collector.collection_duration is not None
 
-    @patch.object(SecurityCollector, '_collect_waf_metrics')
-    @patch.object(SecurityCollector, '_collect_bot_defense_metrics')
-    @patch.object(SecurityCollector, '_collect_api_security_metrics')
-    @patch.object(SecurityCollector, '_collect_ddos_metrics')
-    @patch.object(SecurityCollector, '_collect_security_events')
-    def test_security_metrics_collection_calls_all_methods(
-        self, mock_events, mock_ddos, mock_api, mock_bot, mock_waf, mock_client
+    def test_security_metrics_collection_success(
+        self,
+        mock_client,
+        sample_app_firewall_metrics_response,
+        sample_malicious_bot_metrics_response,
+        sample_security_events_aggregation_response,
+        sample_malicious_user_events_response,
+        sample_dos_events_response,
+        sample_country_attack_sources_response
     ):
-        """Test that security collection calls all sub-methods."""
-        collector = SecurityCollector(mock_client)
-        collector.collect_metrics("system")
-
-        mock_waf.assert_called_once_with("system")
-        mock_bot.assert_called_once_with("system")
-        mock_api.assert_called_once_with("system")
-        mock_ddos.assert_called_once_with("system")
-        mock_events.assert_called_once_with("system")
-
-    def test_waf_data_processing(self, mock_client, sample_security_response):
-        """Test WAF data processing."""
-        mock_client.get_waf_metrics.return_value = sample_security_response
+        """Test successful security metrics collection."""
+        mock_client.list_namespaces.return_value = ["demo-shop"]
+        mock_client.get_app_firewall_metrics_for_namespace.return_value = sample_app_firewall_metrics_response
+        mock_client.get_malicious_bot_metrics_for_namespace.return_value = sample_malicious_bot_metrics_response
+        mock_client.get_security_event_counts_for_namespace.side_effect = [
+            sample_security_events_aggregation_response,  # Main security events
+            sample_malicious_user_events_response,  # Malicious user events
+            sample_dos_events_response  # DoS events
+        ]
+        mock_client.get_security_events_by_country_for_namespace.return_value = sample_country_attack_sources_response
 
         collector = SecurityCollector(mock_client)
-        collector._collect_waf_metrics("system")
+        collector.collect_metrics()
 
-        # Verify WAF metrics would be updated (checking calls)
-        mock_client.get_waf_metrics.assert_called_once_with("system")
+        # Verify success
+        assert collector.collection_success._value._value == 1
+
+        # Verify API calls
+        mock_client.list_namespaces.assert_called_once()
+        mock_client.get_app_firewall_metrics_for_namespace.assert_called_once_with("demo-shop")
+        mock_client.get_malicious_bot_metrics_for_namespace.assert_called_once_with("demo-shop")
+
+    def test_app_firewall_metrics_processing(
+        self,
+        mock_client,
+        sample_app_firewall_metrics_response
+    ):
+        """Test app firewall metrics processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_app_firewall_response(sample_app_firewall_metrics_response, "demo-shop")
+
+        # Check total requests
+        total_requests = collector.total_requests.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert total_requests._value._value == 13442.0
+
+        # Check attacked requests
+        attacked_requests = collector.attacked_requests.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert attacked_requests._value._value == 25.0
+
+        # Check bot detections
+        bot_detections = collector.bot_detections.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert bot_detections._value._value == 18.0
+
+    def test_malicious_bot_metrics_processing(
+        self,
+        mock_client,
+        sample_malicious_bot_metrics_response
+    ):
+        """Test malicious bot metrics processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_malicious_bot_response(sample_malicious_bot_metrics_response, "demo-shop")
+
+        # Check malicious bot detections
+        malicious_bots = collector.malicious_bot_detections.labels(
+            namespace="demo-shop",
+            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+        )
+        assert malicious_bots._value._value == 5.0
+
+    def test_security_events_aggregation_processing(
+        self,
+        mock_client,
+        sample_security_events_aggregation_response
+    ):
+        """Test security events aggregation processing.
+
+        Event counts are now namespace-level only (no per-LB breakdown)
+        because nested sub_aggs don't work in the F5 XC API.
+        """
+        collector = SecurityCollector(mock_client)
+        collector._process_event_aggregation(sample_security_events_aggregation_response, "demo-shop")
+
+        # Check WAF events (namespace-only label)
+        waf_events = collector.waf_events.labels(namespace="demo-shop")
+        assert waf_events._value._value == 20.0
+
+        # Check bot defense events (namespace-only label)
+        bot_defense_events = collector.bot_defense_events.labels(namespace="demo-shop")
+        assert bot_defense_events._value._value == 15.0
+
+        # Check API events (namespace-only label)
+        api_events = collector.api_events.labels(namespace="demo-shop")
+        assert api_events._value._value == 5.0
+
+        # Check service policy events (namespace-only label)
+        svc_policy_events = collector.service_policy_events.labels(namespace="demo-shop")
+        assert svc_policy_events._value._value == 2.0
+
+    def test_malicious_user_events_processing(
+        self,
+        mock_client,
+        sample_malicious_user_events_response
+    ):
+        """Test malicious user events processing.
+
+        Events are now namespace-level only (no per-LB breakdown).
+        """
+        collector = SecurityCollector(mock_client)
+        collector._process_malicious_user_aggregation(sample_malicious_user_events_response, "demo-shop")
+
+        # Namespace-only label
+        malicious_user_events = collector.malicious_user_events.labels(namespace="demo-shop")
+        assert malicious_user_events._value._value == 3.0
+
+    def test_dos_events_processing(
+        self,
+        mock_client,
+        sample_dos_events_response
+    ):
+        """Test DoS events processing.
+
+        Events are now namespace-level only (no per-LB breakdown).
+        DoS events include both ddos_sec_event and dos_sec_event types (summed).
+        """
+        collector = SecurityCollector(mock_client)
+        collector._process_dos_aggregation(sample_dos_events_response, "demo-shop")
+
+        # Namespace-only label, sum of ddos (4) + dos (3) = 7
+        dos_events = collector.dos_events.labels(namespace="demo-shop")
+        assert dos_events._value._value == 7.0
+
+    def test_security_collection_failure(self, mock_client):
+        """Test security metrics collection failure handling."""
+        from f5xc_exporter.client import F5XCAPIError
+
+        mock_client.list_namespaces.side_effect = F5XCAPIError("API Error")
+
+        collector = SecurityCollector(mock_client)
+
+        with pytest.raises(F5XCAPIError):
+            collector.collect_metrics()
+
+        # Check that failure metric is set
+        assert collector.collection_success._value._value == 0
+
+    def test_country_events_processing(
+        self,
+        mock_client,
+        sample_country_attack_sources_response
+    ):
+        """Test events by country processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_country_aggregation(sample_country_attack_sources_response, "demo-shop")
+
+        # Check Germany events
+        de_events = collector.events_by_country.labels(
+            namespace="demo-shop",
+            country="DE"
+        )
+        assert de_events._value._value == 1200.0
+
+        # Check US events
+        us_events = collector.events_by_country.labels(
+            namespace="demo-shop",
+            country="US"
+        )
+        assert us_events._value._value == 250.0
+
+        # Check China events
+        cn_events = collector.events_by_country.labels(
+            namespace="demo-shop",
+            country="CN"
+        )
+        assert cn_events._value._value == 67.0
+
+    def test_attack_sources_processing(
+        self,
+        mock_client,
+        sample_country_attack_sources_response
+    ):
+        """Test top attack sources processing."""
+        collector = SecurityCollector(mock_client)
+        collector._process_attack_sources_aggregation(sample_country_attack_sources_response, "demo-shop")
+
+        # Check top attack source from Germany
+        de_source = collector.top_attack_sources.labels(
+            namespace="demo-shop",
+            country="DE",
+            src_ip="188.68.49.235"
+        )
+        assert de_source._value._value == 1000.0
+
+        # Check attack source from US
+        us_source = collector.top_attack_sources.labels(
+            namespace="demo-shop",
+            country="US",
+            src_ip="45.33.32.156"
+        )
+        assert us_source._value._value == 200.0
+
+        # Check second attack source from Germany
+        de_source2 = collector.top_attack_sources.labels(
+            namespace="demo-shop",
+            country="DE",
+            src_ip="95.217.163.246"
+        )
+        assert de_source2._value._value == 150.0
+
+    def test_security_empty_response_handling(self, mock_client):
+        """Test security collector handles empty responses gracefully."""
+        mock_client.list_namespaces.return_value = ["demo-shop"]
+        mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
+        mock_client.get_malicious_bot_metrics_for_namespace.return_value = {"data": []}
+        mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
+        mock_client.get_security_events_by_country_for_namespace.return_value = {"aggs": {}}
+
+        collector = SecurityCollector(mock_client)
+        collector.collect_metrics()
+
+        # Should succeed even with empty data
+        assert collector.collection_success._value._value == 1
 
 
 class TestSyntheticMonitoringCollector:
@@ -167,75 +344,353 @@ class TestSyntheticMonitoringCollector:
         assert collector.dns_check_success is not None
         assert collector.ping_check_success is not None
 
-    def test_synthetic_metrics_collection(self, mock_client, sample_synthetic_response):
-        """Test synthetic monitoring metrics collection."""
-        mock_client.get_synthetic_monitoring_metrics.return_value = sample_synthetic_response
+    def test_synthetic_metrics_collection(self, mock_client, sample_synthetic_response, sample_synthetic_summary_response):
+        """Test synthetic monitoring metrics collection with new API methods."""
+        mock_client.get_synthetic_monitoring_health.return_value = sample_synthetic_response
+        mock_client.get_http_monitors_health.return_value = sample_synthetic_response
+        mock_client.get_synthetic_monitoring_summary.return_value = sample_synthetic_summary_response
 
         collector = SyntheticMonitoringCollector(mock_client)
         collector.collect_metrics("system")
 
-        mock_client.get_synthetic_monitoring_metrics.assert_called_once_with("system")
+        # Verify new API methods were called
+        mock_client.get_synthetic_monitoring_health.assert_called_once_with("system")
+        mock_client.get_http_monitors_health.assert_called_once_with("system")
+        mock_client.get_synthetic_monitoring_summary.assert_called_once_with("system")
 
         # Check success metric
         success_metric = collector.synthetic_collection_success.labels(namespace="system")
         assert success_metric._value._value == 1
 
-    def test_http_monitor_processing(self, mock_client, sample_synthetic_response):
-        """Test HTTP monitor data processing."""
-        mock_client.get_synthetic_monitoring_metrics.return_value = sample_synthetic_response
+    def test_http_monitor_processing(self, mock_client, sample_synthetic_response, sample_synthetic_summary_response):
+        """Test HTTP monitor data processing with new API structure."""
+        mock_client.get_synthetic_monitoring_health.return_value = sample_synthetic_response
+        mock_client.get_http_monitors_health.return_value = sample_synthetic_response
+        mock_client.get_synthetic_monitoring_summary.return_value = sample_synthetic_summary_response
 
         collector = SyntheticMonitoringCollector(mock_client)
         collector.collect_metrics("system")
 
-        # Check HTTP success metric
+        # Check HTTP success metric - using new structure
         http_success = collector.http_check_success.labels(
             namespace="system",
             monitor_name="test-monitor",
-            location="us-east-1",
+            location="global",
             target_url="https://example.com"
         )
         assert http_success._value._value == 1
 
-        # Check response time metric (converted from ms to seconds)
+        # Check response time metric (150ms -> 0.15s)
         response_time = collector.http_check_response_time.labels(
             namespace="system",
             monitor_name="test-monitor",
-            location="us-east-1",
+            location="global",
             target_url="https://example.com"
         )
-        assert response_time._value._value == 0.15  # 150ms -> 0.15s
+        assert response_time._value._value == 0.15
+
+
+class TestLoadBalancerCollector:
+    """Test unified load balancer metrics collector (HTTP, TCP, UDP)."""
+
+    def test_lb_collector_initialization(self, mock_client):
+        """Test unified LB collector initializes correctly."""
+        collector = LoadBalancerCollector(mock_client)
+
+        assert collector.client == mock_client
+        # HTTP metrics
+        assert collector.http_request_rate is not None
+        assert collector.http_request_to_origin_rate is not None
+        assert collector.http_error_rate is not None
+        assert collector.http_error_rate_4xx is not None
+        assert collector.http_error_rate_5xx is not None
+        assert collector.http_latency is not None
+        assert collector.http_latency_p50 is not None
+        assert collector.http_latency_p90 is not None
+        assert collector.http_latency_p99 is not None
+        # TCP metrics
+        assert collector.tcp_connection_rate is not None
+        assert collector.tcp_connection_duration is not None
+        assert collector.tcp_error_rate is not None
+        # UDP metrics
+        assert collector.udp_request_throughput is not None
+        assert collector.udp_response_throughput is not None
+        # Unified collection status
+        assert collector.collection_success is not None
+        assert collector.collection_duration is not None
+        # Count metrics
+        assert collector.http_lb_count is not None
+        assert collector.tcp_lb_count is not None
+        assert collector.udp_lb_count is not None
+
+    def test_lb_metrics_collection_success(self, mock_client, sample_unified_lb_response):
+        """Test successful unified LB metrics collection."""
+        mock_client.get_all_lb_metrics.return_value = sample_unified_lb_response
+
+        collector = LoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        mock_client.get_all_lb_metrics.assert_called_once()
+
+        # Check that success metric is set
+        assert collector.collection_success._value._value == 1
+
+        # Check LB counts
+        assert collector.http_lb_count._value._value == 1
+        assert collector.tcp_lb_count._value._value == 1
+        assert collector.udp_lb_count._value._value == 1
+
+    def test_lb_metrics_collection_failure(self, mock_client):
+        """Test LB metrics collection failure handling."""
+        mock_client.get_all_lb_metrics.side_effect = F5XCAPIError("API Error")
+
+        collector = LoadBalancerCollector(mock_client)
+
+        with pytest.raises(F5XCAPIError):
+            collector.collect_metrics()
+
+        # Check that failure metric is set
+        assert collector.collection_success._value._value == 0
+
+    def test_unified_lb_data_processing(self, mock_client, sample_unified_lb_response):
+        """Test unified LB data processing for all LB types with direction label."""
+        mock_client.get_all_lb_metrics.return_value = sample_unified_lb_response
+
+        collector = LoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        # Check HTTP LB downstream metrics
+        http_request_rate_downstream = collector.http_request_rate.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert http_request_rate_downstream._value._value == 150.5
+
+        http_error_rate_downstream = collector.http_error_rate.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert http_error_rate_downstream._value._value == 2.5
+
+        http_latency_downstream = collector.http_latency.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert http_latency_downstream._value._value == 0.025
+
+        # Check HTTP LB upstream metrics
+        http_request_rate_upstream = collector.http_request_rate.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert http_request_rate_upstream._value._value == 120.0
+
+        http_latency_upstream = collector.http_latency.labels(
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert http_latency_upstream._value._value == 0.050
+
+        # Check TCP LB downstream metrics
+        tcp_connection_rate_downstream = collector.tcp_connection_rate.labels(
+            namespace="prod",
+            load_balancer="tcp-backend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert tcp_connection_rate_downstream._value._value == 50.0
+
+        tcp_error_rate_downstream = collector.tcp_error_rate.labels(
+            namespace="prod",
+            load_balancer="tcp-backend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert tcp_error_rate_downstream._value._value == 1.5
+
+        # Check TCP LB upstream metrics
+        tcp_connection_rate_upstream = collector.tcp_connection_rate.labels(
+            namespace="prod",
+            load_balancer="tcp-backend",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert tcp_connection_rate_upstream._value._value == 45.0
+
+        # Check UDP LB downstream metrics
+        udp_request_throughput_downstream = collector.udp_request_throughput.labels(
+            namespace="prod",
+            load_balancer="udp-dns-lb",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert udp_request_throughput_downstream._value._value == 100000
+
+        udp_response_throughput_downstream = collector.udp_response_throughput.labels(
+            namespace="prod",
+            load_balancer="udp-dns-lb",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert udp_response_throughput_downstream._value._value == 200000
+
+        # Check UDP LB upstream metrics
+        udp_request_throughput_upstream = collector.udp_request_throughput.labels(
+            namespace="prod",
+            load_balancer="udp-dns-lb",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert udp_request_throughput_upstream._value._value == 95000
+
+    def test_lb_empty_response(self, mock_client):
+        """Test LB collector handles empty response gracefully."""
+        mock_client.get_all_lb_metrics.return_value = {"data": {"nodes": []}}
+
+        collector = LoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        # Should succeed even with empty data
+        assert collector.collection_success._value._value == 1
+        assert collector.http_lb_count._value._value == 0
+        assert collector.tcp_lb_count._value._value == 0
+        assert collector.udp_lb_count._value._value == 0
+
+    def test_lb_missing_vhost_skipped(self, mock_client):
+        """Test nodes without vhost are skipped."""
+        mock_client.get_all_lb_metrics.return_value = {
+            "data": {
+                "nodes": [
+                    {
+                        "id": {
+                            "namespace": "test",
+                            "virtual_host_type": "HTTP_LOAD_BALANCER",
+                            # vhost missing - should be skipped
+                            "site": "site-1"
+                        },
+                        "data": {
+                            "metric": {
+                                "downstream": [
+                                    {
+                                        "type": "HTTP_REQUEST_RATE",
+                                        "value": {
+                                            "raw": [{"timestamp": 123, "value": 100}]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+
+        collector = LoadBalancerCollector(mock_client)
+        collector.collect_metrics()
+
+        # Should succeed but not count this node (vhost is "unknown")
+        assert collector.collection_success._value._value == 1
 
 
 class TestCollectorIntegration:
     """Test collector integration scenarios."""
 
     def test_all_collectors_with_prometheus_registry(self, mock_client):
-        """Test all collectors can be used with Prometheus registry."""
+        """Test all collectors can be properly registered with Prometheus registry."""
+        from prometheus_client import CollectorRegistry, generate_latest
+
+        # Create a custom registry for testing
         registry = CollectorRegistry()
 
+        # Create collectors (matching what MetricsServer uses)
         quota_collector = QuotaCollector(mock_client)
-        service_graph_collector = ServiceGraphCollector(mock_client)
         security_collector = SecurityCollector(mock_client)
         synthetic_collector = SyntheticMonitoringCollector(mock_client)
+        lb_collector = LoadBalancerCollector(mock_client)
 
-        # Should not raise any errors
-        assert quota_collector is not None
-        assert service_graph_collector is not None
-        assert security_collector is not None
-        assert synthetic_collector is not None
+        # Register individual metrics with registry (like MetricsServer does)
+        registry.register(quota_collector.quota_limit)
+        registry.register(quota_collector.quota_current)
+        registry.register(quota_collector.quota_utilization)
+        registry.register(quota_collector.quota_collection_success)
+        registry.register(quota_collector.quota_collection_duration)
+
+        # Security metrics - App Firewall (API 1)
+        registry.register(security_collector.total_requests)
+        registry.register(security_collector.attacked_requests)
+        registry.register(security_collector.bot_detections)
+        registry.register(security_collector.malicious_bot_detections)
+        # Security metrics - Event Counts (API 2)
+        registry.register(security_collector.waf_events)
+        registry.register(security_collector.bot_defense_events)
+        registry.register(security_collector.api_events)
+        registry.register(security_collector.service_policy_events)
+        registry.register(security_collector.malicious_user_events)
+        registry.register(security_collector.dos_events)
+        # Security collection status
+        registry.register(security_collector.collection_success)
+        registry.register(security_collector.collection_duration)
+
+        registry.register(synthetic_collector.http_check_success)
+        registry.register(synthetic_collector.dns_check_success)
+        registry.register(synthetic_collector.ping_check_success)
+        registry.register(synthetic_collector.http_check_response_time)
+        registry.register(synthetic_collector.synthetic_collection_success)
+        registry.register(synthetic_collector.synthetic_collection_duration)
+
+        # Unified LB collector metrics (HTTP, TCP, UDP)
+        registry.register(lb_collector.http_request_rate)
+        registry.register(lb_collector.http_error_rate)
+        registry.register(lb_collector.http_latency)
+        registry.register(lb_collector.tcp_connection_rate)
+        registry.register(lb_collector.tcp_error_rate)
+        registry.register(lb_collector.udp_request_throughput)
+        registry.register(lb_collector.udp_response_throughput)
+        registry.register(lb_collector.collection_success)
+        registry.register(lb_collector.collection_duration)
+        registry.register(lb_collector.http_lb_count)
+        registry.register(lb_collector.tcp_lb_count)
+        registry.register(lb_collector.udp_lb_count)
+
+        # Test that metrics can be generated (this would have caught the bug)
+        metrics_output = generate_latest(registry)
+        assert metrics_output is not None
+        assert len(metrics_output) > 0
+
+        # Test that metrics output contains expected metric names
+        metrics_str = metrics_output.decode('utf-8')
+        assert 'f5xc_quota_limit' in metrics_str
+        assert 'f5xc_security_collection_success' in metrics_str
+        assert 'f5xc_synthetic_collection_success' in metrics_str
+        # Unified LB metrics
+        assert 'f5xc_http_lb_request_rate' in metrics_str
+        assert 'f5xc_tcp_lb_connection_rate' in metrics_str
+        assert 'f5xc_udp_lb_request_throughput_bps' in metrics_str
+        assert 'f5xc_lb_collection_success' in metrics_str  # Single unified collection success
 
     def test_collector_error_handling(self, mock_client):
         """Test collector error handling doesn't crash."""
         mock_client.get_quota_usage.side_effect = Exception("Network error")
 
-        collector = QuotaCollector(mock_client)
+        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
+            collector = QuotaCollector(mock_client)
 
-        with pytest.raises(Exception):
+            with pytest.raises(Exception):
+                collector.collect_metrics("system")
+
+            # Collector should still be usable after error
+            mock_client.get_quota_usage.side_effect = None
+            mock_client.get_quota_usage.return_value = {"quota_usage": {}}
+
+            # Should not raise
             collector.collect_metrics("system")
-
-        # Collector should still be usable after error
-        mock_client.get_quota_usage.side_effect = None
-        mock_client.get_quota_usage.return_value = {"quota_usage": {}}
-
-        # Should not raise
-        collector.collect_metrics("system")

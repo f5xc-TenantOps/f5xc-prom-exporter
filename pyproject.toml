@@ -7,7 +7,7 @@ name = "f5xc-prom-exporter"
 version = "0.1.0"
 description = "Prometheus exporter for F5 Distributed Cloud metrics"
 readme = "README.md"
-license = {text = "Unlicense"}
+license = "Unlicense"
 authors = [
     {name = "tenantOps", email = "tenantOps@f5demos.com"}
 ]
@@ -17,9 +17,6 @@ classifiers = [
     "Topic :: System :: Monitoring",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
 ]
 requires-python = ">=3.9"
 dependencies = [
@@ -55,13 +52,19 @@ Issues = "https://github.com/tenantOps/f5xc-prom-exporter/issues"
 where = ["src"]
 
 [tool.black]
-line-length = 88
+line-length = 100
 target-version = ['py39']
 
 [tool.ruff]
-line-length = 88
+line-length = 120
 target-version = "py39"
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "A", "S", "T", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Allow asserts, hardcoded test credentials, long lines in test fixtures, try-except-pass, and bare except in tests
+"tests/*" = ["S101", "S105", "S106", "S110", "E501", "B017", "E722"]
 
 [tool.mypy]
 python_version = "3.9"

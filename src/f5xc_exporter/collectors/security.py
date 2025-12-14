@@ -1,400 +1,576 @@
-"""Security metrics collector for F5XC."""
+"""Security metrics collector for F5XC.
 
-from typing import Any, Dict, List, Optional
+Collects security trend metrics from two F5 XC APIs:
+1. App Firewall Metrics API - aggregate counters (total requests, attacked requests, bot detections)
+2. Security Events Aggregation API - event counts by type (WAF, bot defense, API sec, etc.)
+"""
+
 import time
+from typing import Any, Optional
 
 import structlog
-from prometheus_client import Gauge, Counter
+from prometheus_client import Gauge
 
-from ..client import F5XCClient, F5XCAPIError
+from ..client import F5XCAPIError, F5XCClient
 
 logger = structlog.get_logger()
 
 
 class SecurityCollector:
-    """Collector for F5XC security metrics."""
+    """Collector for F5XC security metrics.
+
+    Uses two APIs to collect security trend metrics:
+    - App Firewall Metrics: aggregate counters per load balancer
+    - Security Events Aggregation: event counts by type per load balancer
+    """
+
+    # Security event types to collect from events/aggregation API
+    SECURITY_EVENT_TYPES = [
+        "waf_sec_event",
+        "bot_defense_sec_event",
+        "api_sec_event",
+        "svc_policy_sec_event",
+    ]
+
+    MALICIOUS_USER_EVENT_TYPES = ["malicious_user_sec_event"]
+    DOS_EVENT_TYPES = ["ddos_sec_event", "dos_sec_event"]
 
     def __init__(self, client: F5XCClient):
         """Initialize security collector."""
         self.client = client
 
-        # WAF metrics
-        self.waf_requests_total = Counter(
-            "f5xc_waf_requests_total",
-            "Total WAF requests",
-            ["namespace", "app", "action", "rule_type"]
+        # Labels for all security metrics
+        labels = ["namespace", "load_balancer"]
+
+        # --- App Firewall Metrics (API 1) ---
+        self.total_requests = Gauge(
+            "f5xc_security_total_requests",
+            "Total requests processed by app firewall",
+            labels
+        )
+        self.attacked_requests = Gauge(
+            "f5xc_security_attacked_requests",
+            "WAF blocked/attacked requests",
+            labels
+        )
+        self.bot_detections = Gauge(
+            "f5xc_security_bot_detections",
+            "Total bot detections (all classifications)",
+            labels
+        )
+        self.malicious_bot_detections = Gauge(
+            "f5xc_security_malicious_bot_detections",
+            "Malicious bot detections only",
+            labels
         )
 
-        self.waf_blocked_requests_total = Counter(
-            "f5xc_waf_blocked_requests_total",
-            "Total WAF blocked requests",
-            ["namespace", "app", "attack_type"]
+        # --- Security Event Counts (API 2) ---
+        # Event counts are namespace-level only because the API doesn't support
+        # nested sub_aggs (VH_NAME -> SEC_EVENT_TYPE returns empty {})
+        ns_labels = ["namespace"]
+        self.waf_events = Gauge(
+            "f5xc_security_waf_events",
+            "WAF security event count (namespace total)",
+            ns_labels
+        )
+        self.bot_defense_events = Gauge(
+            "f5xc_security_bot_defense_events",
+            "Bot defense security event count (namespace total)",
+            ns_labels
+        )
+        self.api_events = Gauge(
+            "f5xc_security_api_events",
+            "API security event count (namespace total)",
+            ns_labels
+        )
+        self.service_policy_events = Gauge(
+            "f5xc_security_service_policy_events",
+            "Service policy security event count (namespace total)",
+            ns_labels
+        )
+        self.malicious_user_events = Gauge(
+            "f5xc_security_malicious_user_events",
+            "Malicious user event count (namespace total)",
+            ns_labels
+        )
+        self.dos_events = Gauge(
+            "f5xc_security_dos_events",
+            "DDoS/DoS event count (namespace total)",
+            ns_labels
         )
 
-        self.waf_rule_hits_total = Counter(
-            "f5xc_waf_rule_hits_total",
-            "Total WAF rule hits",
-            ["namespace", "app", "rule_id", "rule_type"]
+        # --- Geographic/Source Metrics ---
+        self.events_by_country = Gauge(
+            "f5xc_security_events_by_country",
+            "Security events by source country",
+            ["namespace", "country"]
+        )
+        self.top_attack_sources = Gauge(
+            "f5xc_security_top_attack_sources",
+            "Top attack sources by IP and country",
+            ["namespace", "country", "src_ip"]
         )
 
-        # Bot Defense metrics
-        self.bot_requests_total = Counter(
-            "f5xc_bot_requests_total",
-            "Total bot defense requests",
-            ["namespace", "app", "action", "bot_type"]
-        )
-
-        self.bot_blocked_requests_total = Counter(
-            "f5xc_bot_blocked_requests_total",
-            "Total bot defense blocked requests",
-            ["namespace", "app", "bot_type"]
-        )
-
-        self.bot_score = Gauge(
-            "f5xc_bot_score",
-            "Bot score (0-100, higher is more likely bot)",
-            ["namespace", "app", "client_ip"]
-        )
-
-        # API Discovery metrics
-        self.api_endpoints_discovered = Gauge(
-            "f5xc_api_endpoints_discovered_total",
-            "Total API endpoints discovered",
-            ["namespace", "app"]
-        )
-
-        self.api_schema_violations_total = Counter(
-            "f5xc_api_schema_violations_total",
-            "Total API schema violations",
-            ["namespace", "app", "endpoint", "violation_type"]
-        )
-
-        # DDoS metrics
-        self.ddos_attacks_total = Counter(
-            "f5xc_ddos_attacks_total",
-            "Total DDoS attacks detected",
-            ["namespace", "app", "attack_type"]
-        )
-
-        self.ddos_mitigation_active = Gauge(
-            "f5xc_ddos_mitigation_active",
-            "Whether DDoS mitigation is active",
-            ["namespace", "app"]
-        )
-
-        # Security Events
-        self.security_events_total = Counter(
-            "f5xc_security_events_total",
-            "Total security events",
-            ["namespace", "app", "event_type", "severity"]
-        )
-
-        self.security_alerts_total = Counter(
-            "f5xc_security_alerts_total",
-            "Total security alerts",
-            ["namespace", "alert_type", "severity"]
-        )
-
-        # Collection metrics
-        self.security_collection_success = Gauge(
+        # --- Collection Status Metrics (no labels) ---
+        self.collection_success = Gauge(
             "f5xc_security_collection_success",
-            "Whether security collection succeeded",
-            ["namespace"]
+            "Whether security metrics collection succeeded (1=success, 0=failure)",
+            []
         )
-
-        self.security_collection_duration = Gauge(
+        self.collection_duration = Gauge(
             "f5xc_security_collection_duration_seconds",
             "Time taken to collect security metrics",
-            ["namespace"]
+            []
         )
 
-    def collect_metrics(self, namespace: str = "system") -> None:
-        """Collect security metrics for the specified namespace."""
+    def collect_metrics(self) -> None:
+        """Collect all security metrics from all namespaces."""
         start_time = time.time()
 
         try:
-            logger.info("Collecting security metrics", namespace=namespace)
+            logger.info("Collecting security metrics")
 
-            # Collect different security metrics
-            self._collect_waf_metrics(namespace)
-            self._collect_bot_defense_metrics(namespace)
-            self._collect_api_security_metrics(namespace)
-            self._collect_ddos_metrics(namespace)
-            self._collect_security_events(namespace)
+            namespaces = self.client.list_namespaces()
+            logger.debug("Found namespaces for security collection", count=len(namespaces))
 
-            # Mark collection as successful
-            self.security_collection_success.labels(namespace=namespace).set(1)
+            for namespace in namespaces:
+                try:
+                    self._collect_app_firewall_metrics(namespace)
+                    self._collect_security_event_counts(namespace)
+                    self._collect_geographic_metrics(namespace)
+                except F5XCAPIError as e:
+                    logger.warning(
+                        "Failed to collect security metrics for namespace",
+                        namespace=namespace,
+                        error=str(e)
+                    )
+                    continue
+
+            self.collection_success.set(1)
 
             collection_duration = time.time() - start_time
-            self.security_collection_duration.labels(namespace=namespace).set(collection_duration)
+            self.collection_duration.set(collection_duration)
 
             logger.info(
                 "Security metrics collection successful",
-                namespace=namespace,
                 duration=collection_duration,
+                namespace_count=len(namespaces),
             )
 
         except F5XCAPIError as e:
             logger.error(
                 "Failed to collect security metrics",
-                namespace=namespace,
                 error=str(e),
                 exc_info=True,
             )
-            self.security_collection_success.labels(namespace=namespace).set(0)
+            self.collection_success.set(0)
             raise
 
-    def _collect_waf_metrics(self, namespace: str) -> None:
-        """Collect WAF metrics."""
+    def _collect_app_firewall_metrics(self, namespace: str) -> None:
+        """Collect metrics from app_firewall/metrics API."""
+        # Get main metrics (total requests, attacked requests, bot detections)
         try:
-            waf_data = self.client.get_waf_metrics(namespace)
-            self._process_waf_data(waf_data, namespace)
+            response = self.client.get_app_firewall_metrics_for_namespace(namespace)
+            self._process_app_firewall_response(response, namespace)
         except F5XCAPIError as e:
-            logger.warning("Failed to collect WAF metrics", namespace=namespace, error=str(e))
-
-    def _collect_bot_defense_metrics(self, namespace: str) -> None:
-        """Collect Bot Defense metrics."""
-        try:
-            bot_data = self.client.get_bot_defense_metrics(namespace)
-            self._process_bot_defense_data(bot_data, namespace)
-        except F5XCAPIError as e:
-            logger.warning("Failed to collect bot defense metrics", namespace=namespace, error=str(e))
-
-    def _collect_api_security_metrics(self, namespace: str) -> None:
-        """Collect API Security metrics."""
-        try:
-            api_data = self.client.get_api_security_metrics(namespace)
-            self._process_api_security_data(api_data, namespace)
-        except F5XCAPIError as e:
-            logger.warning("Failed to collect API security metrics", namespace=namespace, error=str(e))
-
-    def _collect_ddos_metrics(self, namespace: str) -> None:
-        """Collect DDoS metrics."""
-        try:
-            ddos_data = self.client.get_ddos_metrics(namespace)
-            self._process_ddos_data(ddos_data, namespace)
-        except F5XCAPIError as e:
-            logger.warning("Failed to collect DDoS metrics", namespace=namespace, error=str(e))
-
-    def _collect_security_events(self, namespace: str) -> None:
-        """Collect security events."""
-        try:
-            events_data = self.client.get_security_events(namespace)
-            self._process_security_events_data(events_data, namespace)
-        except F5XCAPIError as e:
-            logger.warning("Failed to collect security events", namespace=namespace, error=str(e))
-
-    def _process_waf_data(self, waf_data: Dict[str, Any], namespace: str) -> None:
-        """Process WAF data and update metrics."""
-        logger.debug("Processing WAF data", namespace=namespace)
-
-        # Process WAF requests by action and rule type
-        requests = waf_data.get("requests", [])
-        for request in requests:
-            app = request.get("app", "unknown")
-            action = request.get("action", "unknown")  # allow, block, log
-            rule_type = request.get("rule_type", "unknown")
-            count = request.get("count", 0)
-
-            try:
-                self.waf_requests_total.labels(
-                    namespace=namespace,
-                    app=app,
-                    action=action,
-                    rule_type=rule_type
-                )._value._value += float(count)
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse WAF request count", error=str(e))
-
-        # Process blocked requests by attack type
-        blocked_requests = waf_data.get("blocked_requests", [])
-        for blocked in blocked_requests:
-            app = blocked.get("app", "unknown")
-            attack_type = blocked.get("attack_type", "unknown")
-            count = blocked.get("count", 0)
-
-            try:
-                self.waf_blocked_requests_total.labels(
-                    namespace=namespace,
-                    app=app,
-                    attack_type=attack_type
-                )._value._value += float(count)
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse WAF blocked request count", error=str(e))
-
-        # Process rule hits
-        rule_hits = waf_data.get("rule_hits", [])
-        for hit in rule_hits:
-            app = hit.get("app", "unknown")
-            rule_id = hit.get("rule_id", "unknown")
-            rule_type = hit.get("rule_type", "unknown")
-            count = hit.get("count", 0)
-
-            try:
-                self.waf_rule_hits_total.labels(
-                    namespace=namespace,
-                    app=app,
-                    rule_id=rule_id,
-                    rule_type=rule_type
-                )._value._value += float(count)
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse WAF rule hit count", error=str(e))
-
-    def _process_bot_defense_data(self, bot_data: Dict[str, Any], namespace: str) -> None:
-        """Process bot defense data and update metrics."""
-        logger.debug("Processing bot defense data", namespace=namespace)
-
-        # Process bot requests
-        bot_requests = bot_data.get("requests", [])
-        for request in bot_requests:
-            app = request.get("app", "unknown")
-            action = request.get("action", "unknown")  # allow, block, challenge
-            bot_type = request.get("bot_type", "unknown")  # malicious, suspicious, good
-            count = request.get("count", 0)
-
-            try:
-                self.bot_requests_total.labels(
-                    namespace=namespace,
-                    app=app,
-                    action=action,
-                    bot_type=bot_type
-                )._value._value += float(count)
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse bot request count", error=str(e))
-
-        # Process blocked bot requests
-        blocked_requests = bot_data.get("blocked_requests", [])
-        for blocked in blocked_requests:
-            app = blocked.get("app", "unknown")
-            bot_type = blocked.get("bot_type", "unknown")
-            count = blocked.get("count", 0)
-
-            try:
-                self.bot_blocked_requests_total.labels(
-                    namespace=namespace,
-                    app=app,
-                    bot_type=bot_type
-                )._value._value += float(count)
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse bot blocked request count", error=str(e))
-
-        # Process bot scores
-        bot_scores = bot_data.get("bot_scores", [])
-        for score_data in bot_scores:
-            app = score_data.get("app", "unknown")
-            client_ip = score_data.get("client_ip", "unknown")
-            score = score_data.get("score", 0)
-
-            try:
-                self.bot_score.labels(
-                    namespace=namespace,
-                    app=app,
-                    client_ip=client_ip
-                ).set(float(score))
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse bot score", error=str(e))
-
-    def _process_api_security_data(self, api_data: Dict[str, Any], namespace: str) -> None:
-        """Process API security data and update metrics."""
-        logger.debug("Processing API security data", namespace=namespace)
-
-        # Process discovered endpoints
-        discovered_endpoints = api_data.get("discovered_endpoints", [])
-        for endpoint_data in discovered_endpoints:
-            app = endpoint_data.get("app", "unknown")
-            count = endpoint_data.get("count", 0)
-
-            try:
-                self.api_endpoints_discovered.labels(
-                    namespace=namespace,
-                    app=app
-                ).set(float(count))
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse API endpoint count", error=str(e))
-
-        # Process schema violations
-        schema_violations = api_data.get("schema_violations", [])
-        for violation in schema_violations:
-            app = violation.get("app", "unknown")
-            endpoint = violation.get("endpoint", "unknown")
-            violation_type = violation.get("violation_type", "unknown")
-            count = violation.get("count", 0)
-
-            try:
-                self.api_schema_violations_total.labels(
-                    namespace=namespace,
-                    app=app,
-                    endpoint=endpoint,
-                    violation_type=violation_type
-                )._value._value += float(count)
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse API schema violation count", error=str(e))
-
-    def _process_ddos_data(self, ddos_data: Dict[str, Any], namespace: str) -> None:
-        """Process DDoS data and update metrics."""
-        logger.debug("Processing DDoS data", namespace=namespace)
-
-        # Process DDoS attacks
-        attacks = ddos_data.get("attacks", [])
-        for attack in attacks:
-            app = attack.get("app", "unknown")
-            attack_type = attack.get("attack_type", "unknown")
-            count = attack.get("count", 0)
-
-            try:
-                self.ddos_attacks_total.labels(
-                    namespace=namespace,
-                    app=app,
-                    attack_type=attack_type
-                )._value._value += float(count)
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse DDoS attack count", error=str(e))
-
-        # Process mitigation status
-        mitigation_status = ddos_data.get("mitigation_status", [])
-        for status in mitigation_status:
-            app = status.get("app", "unknown")
-            active = status.get("active", False)
-
-            self.ddos_mitigation_active.labels(
+            logger.warning(
+                "Failed to get app firewall metrics",
                 namespace=namespace,
-                app=app
-            ).set(1 if active else 0)
+                error=str(e)
+            )
 
-    def _process_security_events_data(self, events_data: Dict[str, Any], namespace: str) -> None:
-        """Process security events data and update metrics."""
-        logger.debug("Processing security events data", namespace=namespace)
+        # Get malicious bot metrics separately (filtered by BOT_CLASSIFICATION)
+        try:
+            bot_response = self.client.get_malicious_bot_metrics_for_namespace(namespace)
+            self._process_malicious_bot_response(bot_response, namespace)
+        except F5XCAPIError as e:
+            logger.warning(
+                "Failed to get malicious bot metrics",
+                namespace=namespace,
+                error=str(e)
+            )
 
-        # Process security events
-        events = events_data.get("events", [])
-        for event in events:
-            app = event.get("app", "unknown")
-            event_type = event.get("event_type", "unknown")
-            severity = event.get("severity", "unknown")
-            count = event.get("count", 0)
+    def _collect_security_event_counts(self, namespace: str) -> None:
+        """Collect event counts from app_security/events/aggregation API."""
+        # Main security events (WAF, bot defense, API sec, service policy)
+        try:
+            response = self.client.get_security_event_counts_for_namespace(
+                namespace, self.SECURITY_EVENT_TYPES
+            )
+            self._process_event_aggregation(response, namespace)
+        except F5XCAPIError as e:
+            logger.warning(
+                "Failed to get security event counts",
+                namespace=namespace,
+                error=str(e)
+            )
+
+        # Malicious user events
+        try:
+            user_response = self.client.get_security_event_counts_for_namespace(
+                namespace, self.MALICIOUS_USER_EVENT_TYPES
+            )
+            self._process_malicious_user_aggregation(user_response, namespace)
+        except F5XCAPIError as e:
+            logger.warning(
+                "Failed to get malicious user events",
+                namespace=namespace,
+                error=str(e)
+            )
+
+        # DoS events
+        try:
+            dos_response = self.client.get_security_event_counts_for_namespace(
+                namespace, self.DOS_EVENT_TYPES
+            )
+            self._process_dos_aggregation(dos_response, namespace)
+        except F5XCAPIError as e:
+            logger.warning(
+                "Failed to get DoS events",
+                namespace=namespace,
+                error=str(e)
+            )
+
+    def _collect_geographic_metrics(self, namespace: str) -> None:
+        """Collect geographic metrics (events by country, top attack sources)."""
+        try:
+            response = self.client.get_security_events_by_country_for_namespace(
+                namespace, self.SECURITY_EVENT_TYPES
+            )
+            self._process_country_aggregation(response, namespace)
+            self._process_attack_sources_aggregation(response, namespace)
+        except F5XCAPIError as e:
+            logger.warning(
+                "Failed to get geographic metrics",
+                namespace=namespace,
+                error=str(e)
+            )
+
+    def _process_app_firewall_response(
+        self,
+        data: dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process app firewall metrics response.
+
+        Response structure:
+        {
+            "data": [
+                {
+                    "type": "ATTACKED_REQUESTS",
+                    "data": [
+                        {
+                            "key": {"VIRTUAL_HOST": "ves-io-http-loadbalancer-..."},
+                            "value": [{"timestamp": ..., "value": "0"}]
+                        }
+                    ],
+                    "unit": "UNIT_COUNT"
+                }
+            ],
+            "step": "5m"
+        }
+        """
+        for metric_group in data.get("data", []):
+            metric_type = metric_group.get("type", "")
+            gauge = self._get_gauge_for_app_firewall_type(metric_type)
+
+            if not gauge:
+                continue
+
+            for item in metric_group.get("data", []):
+                key = item.get("key", {})
+                load_balancer = key.get("VIRTUAL_HOST", "unknown")
+
+                # Get latest value from the value array
+                values = item.get("value", [])
+                if not values:
+                    continue
+
+                latest = values[-1] if values else {}
+                value_str = latest.get("value", "0")
+
+                try:
+                    value = float(value_str)
+                    gauge.labels(
+                        namespace=namespace,
+                        load_balancer=load_balancer
+                    ).set(value)
+                except (ValueError, TypeError) as e:
+                    logger.warning(
+                        "Failed to parse app firewall metric value",
+                        metric_type=metric_type,
+                        value=value_str,
+                        error=str(e)
+                    )
+
+    def _process_malicious_bot_response(
+        self,
+        data: dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process malicious bot metrics response."""
+        for metric_group in data.get("data", []):
+            metric_type = metric_group.get("type", "")
+
+            # Only process BOT_DETECTION for malicious bots
+            if metric_type != "BOT_DETECTION":
+                continue
+
+            for item in metric_group.get("data", []):
+                key = item.get("key", {})
+                load_balancer = key.get("VIRTUAL_HOST", "unknown")
+
+                values = item.get("value", [])
+                if not values:
+                    continue
+
+                latest = values[-1] if values else {}
+                value_str = latest.get("value", "0")
+
+                try:
+                    value = float(value_str)
+                    self.malicious_bot_detections.labels(
+                        namespace=namespace,
+                        load_balancer=load_balancer
+                    ).set(value)
+                except (ValueError, TypeError) as e:
+                    logger.warning(
+                        "Failed to parse malicious bot metric value",
+                        value=value_str,
+                        error=str(e)
+                    )
+
+    def _process_event_aggregation(
+        self,
+        data: dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process security events aggregation response.
+
+        Response structure (single-level aggregation by event type):
+        {
+            "aggs": {
+                "by_event_type": {
+                    "field_aggregation": {
+                        "buckets": [
+                            {"key": "waf_sec_event", "count": "20"},
+                            {"key": "bot_defense_sec_event", "count": "22"},
+                            {"key": "svc_policy_sec_event", "count": "10"}
+                        ]
+                    }
+                }
+            }
+        }
+
+        Note: We use namespace-level aggregation because nested sub_aggs
+        (VH_NAME -> SEC_EVENT_TYPE) don't work in this API.
+        """
+        aggs = data.get("aggs", {})
+        event_type_agg = aggs.get("by_event_type", {})
+        field_agg = event_type_agg.get("field_aggregation", {})
+        buckets = field_agg.get("buckets", [])
+
+        for bucket in buckets:
+            event_type = bucket.get("key", "")
+            count_str = bucket.get("count", "0")
+
+            gauge = self._get_gauge_for_event_type(event_type)
+            if not gauge:
+                continue
 
             try:
-                self.security_events_total.labels(
-                    namespace=namespace,
-                    app=app,
+                count = float(count_str)
+                gauge.labels(namespace=namespace).set(count)
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    "Failed to parse event count",
                     event_type=event_type,
-                    severity=severity
-                )._value._value += float(count)
-            except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse security event count", error=str(e))
+                    count=count_str,
+                    error=str(e)
+                )
 
-        # Process security alerts
-        alerts = events_data.get("alerts", [])
-        for alert in alerts:
-            alert_type = alert.get("alert_type", "unknown")
-            severity = alert.get("severity", "unknown")
-            count = alert.get("count", 0)
+    def _process_malicious_user_aggregation(
+        self,
+        data: dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process malicious user events aggregation response.
+
+        Response structure (single-level aggregation by event type):
+        {
+            "aggs": {
+                "by_event_type": {
+                    "field_aggregation": {
+                        "buckets": [
+                            {"key": "malicious_user_sec_event", "count": "15"}
+                        ]
+                    }
+                }
+            }
+        }
+        """
+        aggs = data.get("aggs", {})
+        event_type_agg = aggs.get("by_event_type", {})
+        field_agg = event_type_agg.get("field_aggregation", {})
+        buckets = field_agg.get("buckets", [])
+
+        # Sum up all malicious user events for this namespace
+        total_count: float = 0.0
+        for bucket in buckets:
+            count_str = bucket.get("count", "0")
+            try:
+                total_count += float(count_str)
+            except (ValueError, TypeError):
+                pass
+
+        self.malicious_user_events.labels(namespace=namespace).set(total_count)
+
+    def _process_dos_aggregation(
+        self,
+        data: dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process DoS events aggregation response.
+
+        Response structure (single-level aggregation by event type):
+        {
+            "aggs": {
+                "by_event_type": {
+                    "field_aggregation": {
+                        "buckets": [
+                            {"key": "ddos_sec_event", "count": "5"},
+                            {"key": "dos_sec_event", "count": "3"}
+                        ]
+                    }
+                }
+            }
+        }
+        """
+        aggs = data.get("aggs", {})
+        event_type_agg = aggs.get("by_event_type", {})
+        field_agg = event_type_agg.get("field_aggregation", {})
+        buckets = field_agg.get("buckets", [])
+
+        # Sum up all DoS-related events for this namespace
+        total_count: float = 0.0
+        for bucket in buckets:
+            count_str = bucket.get("count", "0")
+            try:
+                total_count += float(count_str)
+            except (ValueError, TypeError):
+                pass
+
+        self.dos_events.labels(namespace=namespace).set(total_count)
+
+    def _process_country_aggregation(
+        self,
+        data: dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process events by country aggregation response.
+
+        Response structure:
+        {
+            "aggs": {
+                "by_country": {
+                    "field_aggregation": {
+                        "buckets": [
+                            {"key": "DE", "count": "1517"},
+                            {"key": "US", "count": "500"}
+                        ]
+                    }
+                }
+            }
+        }
+        """
+        aggs = data.get("aggs", {})
+        country_agg = aggs.get("by_country", {})
+        field_agg = country_agg.get("field_aggregation", {})
+        buckets = field_agg.get("buckets", [])
+
+        for bucket in buckets:
+            country = bucket.get("key", "unknown")
+            count_str = bucket.get("count", "0")
 
             try:
-                self.security_alerts_total.labels(
+                count = float(count_str)
+                self.events_by_country.labels(
                     namespace=namespace,
-                    alert_type=alert_type,
-                    severity=severity
-                )._value._value += float(count)
+                    country=country
+                ).set(count)
             except (ValueError, TypeError) as e:
-                logger.warning("Failed to parse security alert count", error=str(e))
+                logger.warning(
+                    "Failed to parse country event count",
+                    country=country,
+                    count=count_str,
+                    error=str(e)
+                )
+
+    def _process_attack_sources_aggregation(
+        self,
+        data: dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process top attack sources aggregation response.
+
+        Response structure:
+        {
+            "aggs": {
+                "top_attack_sources": {
+                    "multi_field_aggregation": {
+                        "buckets": [
+                            {
+                                "keys": {"country": "DE", "src_ip": "188.68.49.235"},
+                                "count": "1517"
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+        """
+        aggs = data.get("aggs", {})
+        sources_agg = aggs.get("top_attack_sources", {})
+        multi_field_agg = sources_agg.get("multi_field_aggregation", {})
+        buckets = multi_field_agg.get("buckets", [])
+
+        for bucket in buckets:
+            keys = bucket.get("keys", {})
+            country = keys.get("country", "unknown")
+            src_ip = keys.get("src_ip", "unknown")
+            count_str = bucket.get("count", "0")
+
+            try:
+                count = float(count_str)
+                self.top_attack_sources.labels(
+                    namespace=namespace,
+                    country=country,
+                    src_ip=src_ip
+                ).set(count)
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    "Failed to parse attack source count",
+                    country=country,
+                    src_ip=src_ip,
+                    count=count_str,
+                    error=str(e)
+                )
+
+    def _get_gauge_for_app_firewall_type(self, metric_type: str) -> Optional[Gauge]:
+        """Get the appropriate gauge for an app firewall metric type."""
+        mapping = {
+            "TOTAL_REQUESTS": self.total_requests,
+            "ATTACKED_REQUESTS": self.attacked_requests,
+            "BOT_DETECTION": self.bot_detections,
+        }
+        return mapping.get(metric_type)
+
+    def _get_gauge_for_event_type(self, event_type: str) -> Optional[Gauge]:
+        """Get the appropriate gauge for a security event type."""
+        mapping = {
+            "waf_sec_event": self.waf_events,
+            "bot_defense_sec_event": self.bot_defense_events,
+            "api_sec_event": self.api_events,
+            "svc_policy_sec_event": self.service_policy_events,
+        }
+        return mapping.get(event_type)

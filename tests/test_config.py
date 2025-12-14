@@ -1,6 +1,7 @@
 """Tests for configuration management."""
 
 import os
+
 import pytest
 from pydantic import ValidationError
 
@@ -85,7 +86,7 @@ class TestConfig:
         assert config.f5xc_http_lb_interval == 120
         assert config.f5xc_tcp_lb_interval == 120
         assert config.f5xc_udp_lb_interval == 120
-        assert config.f5xc_security_interval == 180
+        assert config.f5xc_security_interval == 300  # Updated from 180 to 300 for API scaling headroom
         assert config.f5xc_synthetic_interval == 120
 
     def test_rate_limiting_defaults(self):
