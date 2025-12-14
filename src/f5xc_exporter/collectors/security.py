@@ -65,35 +65,38 @@ class SecurityCollector:
         )
 
         # --- Security Event Counts (API 2) ---
+        # Event counts are namespace-level only because the API doesn't support
+        # nested sub_aggs (VH_NAME -> SEC_EVENT_TYPE returns empty {})
+        ns_labels = ["namespace"]
         self.waf_events = Gauge(
             "f5xc_security_waf_events",
-            "WAF security event count",
-            labels
+            "WAF security event count (namespace total)",
+            ns_labels
         )
         self.bot_defense_events = Gauge(
             "f5xc_security_bot_defense_events",
-            "Bot defense security event count",
-            labels
+            "Bot defense security event count (namespace total)",
+            ns_labels
         )
         self.api_events = Gauge(
             "f5xc_security_api_events",
-            "API security event count",
-            labels
+            "API security event count (namespace total)",
+            ns_labels
         )
         self.service_policy_events = Gauge(
             "f5xc_security_service_policy_events",
-            "Service policy security event count",
-            labels
+            "Service policy security event count (namespace total)",
+            ns_labels
         )
         self.malicious_user_events = Gauge(
             "f5xc_security_malicious_user_events",
-            "Malicious user event count",
-            labels
+            "Malicious user event count (namespace total)",
+            ns_labels
         )
         self.dos_events = Gauge(
             "f5xc_security_dos_events",
-            "DDoS/DoS event count",
-            labels
+            "DDoS/DoS event count (namespace total)",
+            ns_labels
         )
 
         # --- Geographic/Source Metrics ---
@@ -344,26 +347,62 @@ class SecurityCollector:
     ) -> None:
         """Process security events aggregation response.
 
-        Response structure:
+        Response structure (single-level aggregation by event type):
         {
             "aggs": {
-                "by_lb_and_type": {
+                "by_event_type": {
                     "field_aggregation": {
                         "buckets": [
-                            {
-                                "key": "ves-io-http-loadbalancer-...",
-                                "count": "42",
-                                "sub_aggs": {
-                                    "by_type": {
-                                        "field_aggregation": {
-                                            "buckets": [
-                                                {"key": "waf_sec_event", "count": "20"},
-                                                {"key": "bot_defense_sec_event", "count": "22"}
-                                            ]
-                                        }
-                                    }
-                                }
-                            }
+                            {"key": "waf_sec_event", "count": "20"},
+                            {"key": "bot_defense_sec_event", "count": "22"},
+                            {"key": "svc_policy_sec_event", "count": "10"}
+                        ]
+                    }
+                }
+            }
+        }
+
+        Note: We use namespace-level aggregation because nested sub_aggs
+        (VH_NAME -> SEC_EVENT_TYPE) don't work in this API.
+        """
+        aggs = data.get("aggs", {})
+        event_type_agg = aggs.get("by_event_type", {})
+        field_agg = event_type_agg.get("field_aggregation", {})
+        buckets = field_agg.get("buckets", [])
+
+        for bucket in buckets:
+            event_type = bucket.get("key", "")
+            count_str = bucket.get("count", "0")
+
+            gauge = self._get_gauge_for_event_type(event_type)
+            if not gauge:
+                continue
+
+            try:
+                count = float(count_str)
+                gauge.labels(namespace=namespace).set(count)
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    "Failed to parse event count",
+                    event_type=event_type,
+                    count=count_str,
+                    error=str(e)
+                )
+
+    def _process_malicious_user_aggregation(
+        self,
+        data: dict[str, Any],
+        namespace: str
+    ) -> None:
+        """Process malicious user events aggregation response.
+
+        Response structure (single-level aggregation by event type):
+        {
+            "aggs": {
+                "by_event_type": {
+                    "field_aggregation": {
+                        "buckets": [
+                            {"key": "malicious_user_sec_event", "count": "15"}
                         ]
                     }
                 }
@@ -371,96 +410,57 @@ class SecurityCollector:
         }
         """
         aggs = data.get("aggs", {})
-        lb_agg = aggs.get("by_lb_and_type", {})
-        field_agg = lb_agg.get("field_aggregation", {})
+        event_type_agg = aggs.get("by_event_type", {})
+        field_agg = event_type_agg.get("field_aggregation", {})
         buckets = field_agg.get("buckets", [])
 
+        # Sum up all malicious user events for this namespace
+        total_count = 0
         for bucket in buckets:
-            load_balancer = bucket.get("key", "unknown")
-
-            # Get sub-aggregation by event type
-            sub_aggs = bucket.get("sub_aggs", {})
-            type_agg = sub_aggs.get("by_type", {})
-            type_field_agg = type_agg.get("field_aggregation", {})
-            type_buckets = type_field_agg.get("buckets", [])
-
-            for type_bucket in type_buckets:
-                event_type = type_bucket.get("key", "")
-                count_str = type_bucket.get("count", "0")
-
-                gauge = self._get_gauge_for_event_type(event_type)
-                if not gauge:
-                    continue
-
-                try:
-                    count = float(count_str)
-                    gauge.labels(
-                        namespace=namespace,
-                        load_balancer=load_balancer
-                    ).set(count)
-                except (ValueError, TypeError) as e:
-                    logger.warning(
-                        "Failed to parse event count",
-                        event_type=event_type,
-                        count=count_str,
-                        error=str(e)
-                    )
-
-    def _process_malicious_user_aggregation(
-        self,
-        data: dict[str, Any],
-        namespace: str
-    ) -> None:
-        """Process malicious user events aggregation response."""
-        aggs = data.get("aggs", {})
-        lb_agg = aggs.get("by_lb_and_type", {})
-        field_agg = lb_agg.get("field_aggregation", {})
-        buckets = field_agg.get("buckets", [])
-
-        for bucket in buckets:
-            load_balancer = bucket.get("key", "unknown")
             count_str = bucket.get("count", "0")
-
             try:
-                count = float(count_str)
-                self.malicious_user_events.labels(
-                    namespace=namespace,
-                    load_balancer=load_balancer
-                ).set(count)
-            except (ValueError, TypeError) as e:
-                logger.warning(
-                    "Failed to parse malicious user count",
-                    count=count_str,
-                    error=str(e)
-                )
+                total_count += float(count_str)
+            except (ValueError, TypeError):
+                pass
+
+        self.malicious_user_events.labels(namespace=namespace).set(total_count)
 
     def _process_dos_aggregation(
         self,
         data: dict[str, Any],
         namespace: str
     ) -> None:
-        """Process DoS events aggregation response."""
+        """Process DoS events aggregation response.
+
+        Response structure (single-level aggregation by event type):
+        {
+            "aggs": {
+                "by_event_type": {
+                    "field_aggregation": {
+                        "buckets": [
+                            {"key": "ddos_sec_event", "count": "5"},
+                            {"key": "dos_sec_event", "count": "3"}
+                        ]
+                    }
+                }
+            }
+        }
+        """
         aggs = data.get("aggs", {})
-        lb_agg = aggs.get("by_lb_and_type", {})
-        field_agg = lb_agg.get("field_aggregation", {})
+        event_type_agg = aggs.get("by_event_type", {})
+        field_agg = event_type_agg.get("field_aggregation", {})
         buckets = field_agg.get("buckets", [])
 
+        # Sum up all DoS-related events for this namespace
+        total_count = 0
         for bucket in buckets:
-            load_balancer = bucket.get("key", "unknown")
             count_str = bucket.get("count", "0")
-
             try:
-                count = float(count_str)
-                self.dos_events.labels(
-                    namespace=namespace,
-                    load_balancer=load_balancer
-                ).set(count)
-            except (ValueError, TypeError) as e:
-                logger.warning(
-                    "Failed to parse DoS event count",
-                    count=count_str,
-                    error=str(e)
-                )
+                total_count += float(count_str)
+            except (ValueError, TypeError):
+                pass
+
+        self.dos_events.labels(namespace=namespace).set(total_count)
 
     def _process_country_aggregation(
         self,
