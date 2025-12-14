@@ -51,6 +51,11 @@ def mock_client(test_config):
         client.get_all_lb_metrics_for_namespace = Mock()
         client.get_all_lb_metrics = Mock()
 
+        # Security collector methods (new)
+        client.get_app_firewall_metrics_for_namespace = Mock()
+        client.get_malicious_bot_metrics_for_namespace = Mock()
+        client.get_security_event_counts_for_namespace = Mock()
+
         yield client
 
 
@@ -223,6 +228,138 @@ def sample_security_response():
             {"vhost_name": "test-app", "attack_type": "sql_injection", "count": 15},
             {"vhost_name": "test-app", "attack_type": "xss", "count": 10}
         ]
+    }
+
+
+@pytest.fixture
+def sample_app_firewall_metrics_response():
+    """Sample app firewall metrics response from /api/data/namespaces/{ns}/app_firewall/metrics."""
+    return {
+        "data": [
+            {
+                "type": "TOTAL_REQUESTS",
+                "data": [
+                    {
+                        "key": {"VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"},
+                        "value": [{"timestamp": 1765738201, "value": "13442"}]
+                    }
+                ],
+                "unit": "UNIT_COUNT"
+            },
+            {
+                "type": "ATTACKED_REQUESTS",
+                "data": [
+                    {
+                        "key": {"VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"},
+                        "value": [{"timestamp": 1765738201, "value": "25"}]
+                    }
+                ],
+                "unit": "UNIT_COUNT"
+            },
+            {
+                "type": "BOT_DETECTION",
+                "data": [
+                    {
+                        "key": {"VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"},
+                        "value": [{"timestamp": 1765738201, "value": "18"}]
+                    }
+                ],
+                "unit": "UNIT_COUNT"
+            }
+        ],
+        "step": "5m"
+    }
+
+
+@pytest.fixture
+def sample_malicious_bot_metrics_response():
+    """Sample malicious bot metrics response (filtered by BOT_CLASSIFICATION=malicious)."""
+    return {
+        "data": [
+            {
+                "type": "BOT_DETECTION",
+                "data": [
+                    {
+                        "key": {"VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"},
+                        "value": [{"timestamp": 1765738201, "value": "5"}]
+                    }
+                ],
+                "unit": "UNIT_COUNT"
+            }
+        ],
+        "step": "5m"
+    }
+
+
+@pytest.fixture
+def sample_security_events_aggregation_response():
+    """Sample security events aggregation response from app_security/events/aggregation."""
+    return {
+        "total_hits": "42",
+        "aggs": {
+            "by_lb_and_type": {
+                "field_aggregation": {
+                    "buckets": [
+                        {
+                            "key": "ves-io-http-loadbalancer-demo-shop-fe",
+                            "count": "42",
+                            "sub_aggs": {
+                                "by_type": {
+                                    "field_aggregation": {
+                                        "buckets": [
+                                            {"key": "waf_sec_event", "count": "20"},
+                                            {"key": "bot_defense_sec_event", "count": "15"},
+                                            {"key": "api_sec_event", "count": "5"},
+                                            {"key": "svc_policy_sec_event", "count": "2"}
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+
+@pytest.fixture
+def sample_malicious_user_events_response():
+    """Sample malicious user events aggregation response."""
+    return {
+        "total_hits": "3",
+        "aggs": {
+            "by_lb_and_type": {
+                "field_aggregation": {
+                    "buckets": [
+                        {
+                            "key": "ves-io-http-loadbalancer-demo-shop-fe",
+                            "count": "3"
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+
+@pytest.fixture
+def sample_dos_events_response():
+    """Sample DoS events aggregation response."""
+    return {
+        "total_hits": "7",
+        "aggs": {
+            "by_lb_and_type": {
+                "field_aggregation": {
+                    "buckets": [
+                        {
+                            "key": "ves-io-http-loadbalancer-demo-shop-fe",
+                            "count": "7"
+                        }
+                    ]
+                }
+            }
+        }
     }
 
 

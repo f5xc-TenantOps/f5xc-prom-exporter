@@ -1,6 +1,7 @@
 """F5 Distributed Cloud API client."""
 
 import time
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
@@ -167,20 +168,119 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_app_firewall_metrics(self, namespace: str = "system") -> Dict[str, Any]:
-        """Get app firewall (WAF) metrics for namespace.
+    def get_app_firewall_metrics_for_namespace(
+        self,
+        namespace: str,
+        step_seconds: int = 300
+    ) -> Dict[str, Any]:
+        """Get app firewall metrics for a namespace.
 
-        Uses the correct F5XC API endpoint: /api/data/namespaces/{namespace}/app_firewall/metrics
+        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_firewall/metrics
+        Returns metrics grouped by virtual host (load balancer).
+
+        Args:
+            namespace: The namespace to query
+            step_seconds: Time step for metrics aggregation (default: 300s / 5min)
+
+        Returns:
+            Response containing TOTAL_REQUESTS, ATTACKED_REQUESTS, BOT_DETECTION
+            grouped by VIRTUAL_HOST
         """
         endpoint = f"/api/data/namespaces/{namespace}/app_firewall/metrics"
+        end_time = int(time.time())
+        start_time = end_time - step_seconds
 
-        # App firewall metrics requires POST with query parameters
         payload = {
             "namespace": namespace,
-            "agg_type": "sum",
-            "group_by": ["vhost_name", "attack_type"],
-            "start_time": int(time.time() - 3600),  # Last hour
-            "end_time": int(time.time())
+            "field_selector": ["TOTAL_REQUESTS", "ATTACKED_REQUESTS", "BOT_DETECTION"],
+            "group_by": ["VIRTUAL_HOST"],
+            "filter": f'NAMESPACE="{namespace}"',
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            "step": f"{step_seconds}s"
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_malicious_bot_metrics_for_namespace(
+        self,
+        namespace: str,
+        step_seconds: int = 300
+    ) -> Dict[str, Any]:
+        """Get malicious bot metrics for a namespace.
+
+        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_firewall/metrics
+        with BOT_CLASSIFICATION filter to get only malicious bots.
+
+        Args:
+            namespace: The namespace to query
+            step_seconds: Time step for metrics aggregation (default: 300s / 5min)
+
+        Returns:
+            Response containing BOT_DETECTION counts for malicious bots only
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/app_firewall/metrics"
+        end_time = int(time.time())
+        start_time = end_time - step_seconds
+
+        payload = {
+            "namespace": namespace,
+            "field_selector": ["BOT_DETECTION"],
+            "group_by": ["VIRTUAL_HOST"],
+            "filter": f'BOT_CLASSIFICATION="malicious",NAMESPACE="{namespace}"',
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            "step": f"{step_seconds}s"
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_security_event_counts_for_namespace(
+        self,
+        namespace: str,
+        event_types: List[str],
+        step_seconds: int = 300
+    ) -> Dict[str, Any]:
+        """Get security event counts aggregated by load balancer.
+
+        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_security/events/aggregation
+        to get counts of security events by type and load balancer.
+
+        Args:
+            namespace: The namespace to query
+            event_types: List of sec_event_type values to query
+                         (e.g., ["waf_sec_event", "bot_defense_sec_event"])
+            step_seconds: Time window for event aggregation (default: 300s / 5min)
+
+        Returns:
+            Response containing event counts aggregated by VH_NAME and SEC_EVENT_TYPE
+        """
+        endpoint = f"/api/data/namespaces/{namespace}/app_security/events/aggregation"
+
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(seconds=step_seconds)
+
+        # Build query filter for event types
+        event_filter = "|".join(event_types)
+
+        payload = {
+            "namespace": namespace,
+            "query": f'{{sec_event_type=~"{event_filter}"}}',
+            "aggs": {
+                "by_lb_and_type": {
+                    "field_aggregation": {
+                        "field": "VH_NAME",
+                        "topk": 100,
+                        "sub_aggs": {
+                            "by_type": {
+                                "field_aggregation": {"field": "SEC_EVENT_TYPE"}
+                            }
+                        }
+                    }
+                }
+            },
+            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         }
 
         return self.post(endpoint, json=payload)
