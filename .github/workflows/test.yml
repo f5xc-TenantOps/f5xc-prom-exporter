@@ -37,7 +37,7 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest tests/ -v --cov=src/f5xc_exporter --cov-report=xml --cov-report=term-missing
+        pytest tests/ -v --cov=src/f5xc_exporter --cov-report=term-missing
 
     - name: Run linting
       run: |
@@ -46,11 +46,3 @@ jobs:
     - name: Run type checking
       run: |
         mypy src/f5xc_exporter
-
-    - name: Upload coverage to Codecov
-      if: matrix.python-version == '3.9'
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
