@@ -40,9 +40,7 @@ def mock_client(test_config):
         client.get_app_firewall_metrics = Mock()
         client.get_firewall_logs = Mock()
         client.get_access_logs_aggregation = Mock()
-        client.get_synthetic_monitoring_health = Mock()
-        client.get_synthetic_monitoring_summary = Mock()
-        client.get_http_monitors_health = Mock()
+        client.get_synthetic_summary = Mock()
         client.get_http_lb_metrics = Mock()
         client.get_tcp_lb_metrics = Mock()
         client.get_udp_lb_metrics = Mock()
@@ -310,31 +308,22 @@ def sample_firewall_logs_response():
 
 
 @pytest.fixture
-def sample_synthetic_response():
-    """Sample synthetic monitoring API response - matches F5XC health endpoint structure."""
+def sample_synthetic_http_summary_response():
+    """Sample synthetic monitoring HTTP summary response from global-summary?monitorType=http."""
     return {
-        "monitors": [
-            {
-                "name": "test-monitor",
-                "type": "http",
-                "target": "https://example.com",
-                "status": "healthy",
-                "response_time": 150
-            }
-        ]
+        "critical_monitor_count": 0,
+        "number_of_monitors": 2,
+        "healthy_monitor_count": 2
     }
 
 
 @pytest.fixture
-def sample_synthetic_summary_response():
-    """Sample synthetic monitoring summary response."""
+def sample_synthetic_dns_summary_response():
+    """Sample synthetic monitoring DNS summary response from global-summary?monitorType=dns."""
     return {
-        "total_monitors": 10,
-        "healthy_monitors": 8,
-        "unhealthy_monitors": 2,
-        "monitors": [
-            {"name": "test-monitor", "uptime": 99.5}
-        ]
+        "critical_monitor_count": 1,
+        "number_of_monitors": 3,
+        "healthy_monitor_count": 2
     }
 
 

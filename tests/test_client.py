@@ -193,38 +193,22 @@ class TestF5XCClient:
         assert "aggs" in result
 
     @responses.activate
-    def test_get_synthetic_monitoring_metrics(self, test_config, sample_synthetic_response):
-        """Test synthetic monitoring API methods with correct endpoints."""
+    def test_get_synthetic_summary(self, test_config, sample_synthetic_http_summary_response):
+        """Test synthetic monitoring summary API with GET method."""
         responses.add(
-            responses.POST,
-            "https://test.console.ves.volterra.io/api/observability/synthetic_monitor/namespaces/system/health",
-            json=sample_synthetic_response,
-            status=200
-        )
-        responses.add(
-            responses.POST,
-            "https://test.console.ves.volterra.io/api/observability/synthetic_monitor/namespaces/system/global-summary",
-            json={"total_monitors": 10},
-            status=200
-        )
-        responses.add(
-            responses.POST,
-            "https://test.console.ves.volterra.io/api/observability/synthetic_monitor/namespaces/system/http-monitors-health",
-            json={"monitors": []},
+            responses.GET,
+            "https://test.console.ves.volterra.io/api/observability/synthetic_monitor/namespaces/demo-shop/global-summary",
+            json=sample_synthetic_http_summary_response,
             status=200
         )
 
         client = F5XCClient(test_config)
 
-        # Test new API methods
-        result = client.get_synthetic_monitoring_health()
-        assert result == sample_synthetic_response
-
-        summary = client.get_synthetic_monitoring_summary()
-        assert summary["total_monitors"] == 10
-
-        http_health = client.get_http_monitors_health()
-        assert "monitors" in http_health
+        # Test HTTP monitor summary
+        result = client.get_synthetic_summary("demo-shop", "http")
+        assert result["number_of_monitors"] == 2
+        assert result["healthy_monitor_count"] == 2
+        assert result["critical_monitor_count"] == 0
 
     @responses.activate
     def test_get_http_lb_metrics(self, test_config, sample_http_lb_response):

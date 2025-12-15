@@ -293,50 +293,29 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_synthetic_monitoring_health(self, namespace: str = "system") -> dict[str, Any]:
-        """Get synthetic monitoring health status for namespace.
+    def get_synthetic_summary(
+        self,
+        namespace: str,
+        monitor_type: str
+    ) -> dict[str, Any]:
+        """Get synthetic monitor summary for a namespace.
 
-        Uses the correct F5XC API endpoint: /api/observability/synthetic_monitor/namespaces/{namespace}/health
-        """
-        endpoint = f"/api/observability/synthetic_monitor/namespaces/{namespace}/health"
+        Uses F5XC API endpoint:
+        GET /api/observability/synthetic_monitor/namespaces/{namespace}/global-summary
 
-        # Synthetic monitoring health requires POST
-        payload = {
-            "namespace": namespace
-        }
+        Args:
+            namespace: The namespace to query
+            monitor_type: Either 'http' or 'dns'
 
-        return self.post(endpoint, json=payload)
-
-    def get_synthetic_monitoring_summary(self, namespace: str = "system") -> dict[str, Any]:
-        """Get synthetic monitoring global summary for namespace.
-
-        Uses the correct F5XC API endpoint: /api/observability/synthetic_monitor/namespaces/{namespace}/global-summary
+        Returns:
+            Response containing:
+            - critical_monitor_count: Number of critical monitors
+            - number_of_monitors: Total number of monitors
+            - healthy_monitor_count: Number of healthy monitors
         """
         endpoint = f"/api/observability/synthetic_monitor/namespaces/{namespace}/global-summary"
-
-        # Global summary requires POST with time range
-        payload = {
-            "namespace": namespace,
-            "start_time": int(time.time() - 3600),  # Last hour
-            "end_time": int(time.time())
-        }
-
-        return self.post(endpoint, json=payload)
-
-    def get_http_monitors_health(self, namespace: str = "system") -> dict[str, Any]:
-        """Get HTTP monitors health for namespace.
-
-        Uses the F5XC API endpoint:
-        /api/observability/synthetic_monitor/namespaces/{namespace}/http-monitors-health
-        """
-        endpoint = f"/api/observability/synthetic_monitor/namespaces/{namespace}/http-monitors-health"
-
-        # HTTP monitors health requires POST
-        payload = {
-            "namespace": namespace
-        }
-
-        return self.post(endpoint, json=payload)
+        params = {"monitorType": monitor_type}
+        return self.get(endpoint, params=params)
 
     def get_http_lb_metrics(self, step_seconds: int = 120) -> dict[str, Any]:
         """Get HTTP load balancer metrics across all namespaces.
