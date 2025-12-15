@@ -93,21 +93,17 @@ class MetricsServer:
         self.registry.register(self.quota_collector.quota_collection_success)
         self.registry.register(self.quota_collector.quota_collection_duration)
 
-        # Security metrics - App Firewall (API 1)
+        # Security metrics - Per-LB metrics (from app_firewall/metrics API)
         self.registry.register(self.security_collector.total_requests)
         self.registry.register(self.security_collector.attacked_requests)
         self.registry.register(self.security_collector.bot_detections)
-        self.registry.register(self.security_collector.malicious_bot_detections)
-        # Security metrics - Event Counts (API 2)
+        # Security metrics - Namespace event counts (from events/aggregation API)
         self.registry.register(self.security_collector.waf_events)
         self.registry.register(self.security_collector.bot_defense_events)
         self.registry.register(self.security_collector.api_events)
         self.registry.register(self.security_collector.service_policy_events)
         self.registry.register(self.security_collector.malicious_user_events)
         self.registry.register(self.security_collector.dos_events)
-        # Security metrics - Geographic/Source
-        self.registry.register(self.security_collector.events_by_country)
-        self.registry.register(self.security_collector.top_attack_sources)
         # Security collection status
         self.registry.register(self.security_collector.collection_success)
         self.registry.register(self.security_collector.collection_duration)

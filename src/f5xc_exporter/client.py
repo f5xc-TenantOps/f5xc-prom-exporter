@@ -202,39 +202,6 @@ class F5XCClient:
 
         return self.post(endpoint, json=payload)
 
-    def get_malicious_bot_metrics_for_namespace(
-        self,
-        namespace: str,
-        step_seconds: int = 300
-    ) -> dict[str, Any]:
-        """Get malicious bot metrics for a namespace.
-
-        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_firewall/metrics
-        with BOT_CLASSIFICATION filter to get only malicious bots.
-
-        Args:
-            namespace: The namespace to query
-            step_seconds: Time step for metrics aggregation (default: 300s / 5min)
-
-        Returns:
-            Response containing BOT_DETECTION counts for malicious bots only
-        """
-        endpoint = f"/api/data/namespaces/{namespace}/app_firewall/metrics"
-        end_time = int(time.time())
-        start_time = end_time - step_seconds
-
-        payload = {
-            "namespace": namespace,
-            "field_selector": ["BOT_DETECTION"],
-            "group_by": ["VIRTUAL_HOST"],
-            "filter": f'BOT_CLASSIFICATION="malicious",NAMESPACE="{namespace}"',
-            "start_time": str(start_time),
-            "end_time": str(end_time),
-            "step": f"{step_seconds}s"
-        }
-
-        return self.post(endpoint, json=payload)
-
     def get_security_event_counts_for_namespace(
         self,
         namespace: str,
@@ -275,58 +242,6 @@ class F5XCClient:
                     "field_aggregation": {
                         "field": "SEC_EVENT_TYPE",
                         "topk": 100
-                    }
-                }
-            },
-            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-            "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        }
-
-        return self.post(endpoint, json=payload)
-
-    def get_security_events_by_country_for_namespace(
-        self,
-        namespace: str,
-        event_types: list[str],
-        step_seconds: int = 300
-    ) -> dict[str, Any]:
-        """Get security events aggregated by country and top attack sources.
-
-        Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_security/events/aggregation
-        to get event counts by country and top attack sources (IP + country).
-
-        Args:
-            namespace: The namespace to query
-            event_types: List of sec_event_type values to query
-            step_seconds: Time window for event aggregation (default: 300s / 5min)
-
-        Returns:
-            Response containing:
-            - Events by country (COUNTRY field)
-            - Top attack sources with IP and country (SRC_IP_COUNTRY multi-field)
-        """
-        endpoint = f"/api/data/namespaces/{namespace}/app_security/events/aggregation"
-
-        end_time = datetime.utcnow()
-        start_time = end_time - timedelta(seconds=step_seconds)
-
-        # Build query filter for event types
-        event_filter = "|".join(event_types)
-
-        payload = {
-            "namespace": namespace,
-            "query": f'{{sec_event_type=~"{event_filter}"}}',
-            "aggs": {
-                "by_country": {
-                    "field_aggregation": {
-                        "field": "COUNTRY",
-                        "topk": 20
-                    }
-                },
-                "top_attack_sources": {
-                    "multi_field_aggregation": {
-                        "field": "SRC_IP_COUNTRY",
-                        "topk": 10
                     }
                 }
             },

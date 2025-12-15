@@ -52,11 +52,9 @@ def mock_client(test_config):
         client.get_all_lb_metrics_for_namespace = Mock()
         client.get_all_lb_metrics = Mock()
 
-        # Security collector methods (new)
+        # Security collector methods (2 calls per namespace)
         client.get_app_firewall_metrics_for_namespace = Mock()
-        client.get_malicious_bot_metrics_for_namespace = Mock()
         client.get_security_event_counts_for_namespace = Mock()
-        client.get_security_events_by_country_for_namespace = Mock()
 
         yield client
 
@@ -274,34 +272,13 @@ def sample_app_firewall_metrics_response():
 
 
 @pytest.fixture
-def sample_malicious_bot_metrics_response():
-    """Sample malicious bot metrics response (filtered by BOT_CLASSIFICATION=malicious)."""
-    return {
-        "data": [
-            {
-                "type": "BOT_DETECTION",
-                "data": [
-                    {
-                        "key": {"VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"},
-                        "value": [{"timestamp": 1765738201, "value": "5"}]
-                    }
-                ],
-                "unit": "UNIT_COUNT"
-            }
-        ],
-        "step": "5m"
-    }
-
-
-@pytest.fixture
 def sample_security_events_aggregation_response():
     """Sample security events aggregation response from app_security/events/aggregation.
 
-    Uses single-level aggregation by SEC_EVENT_TYPE because nested sub_aggs
-    (VH_NAME -> SEC_EVENT_TYPE) don't work in the F5 XC API.
+    Contains ALL event types in a single query (consolidated for scalability).
     """
     return {
-        "total_hits": "42",
+        "total_hits": "52",
         "aggs": {
             "by_event_type": {
                 "field_aggregation": {
@@ -309,86 +286,10 @@ def sample_security_events_aggregation_response():
                         {"key": "waf_sec_event", "count": "20"},
                         {"key": "bot_defense_sec_event", "count": "15"},
                         {"key": "api_sec_event", "count": "5"},
-                        {"key": "svc_policy_sec_event", "count": "2"}
-                    ]
-                }
-            }
-        }
-    }
-
-
-@pytest.fixture
-def sample_malicious_user_events_response():
-    """Sample malicious user events aggregation response.
-
-    Uses single-level aggregation by SEC_EVENT_TYPE at namespace level.
-    """
-    return {
-        "total_hits": "3",
-        "aggs": {
-            "by_event_type": {
-                "field_aggregation": {
-                    "buckets": [
-                        {"key": "malicious_user_sec_event", "count": "3"}
-                    ]
-                }
-            }
-        }
-    }
-
-
-@pytest.fixture
-def sample_dos_events_response():
-    """Sample DoS events aggregation response.
-
-    Uses single-level aggregation by SEC_EVENT_TYPE at namespace level.
-    May include both ddos_sec_event and dos_sec_event types.
-    """
-    return {
-        "total_hits": "7",
-        "aggs": {
-            "by_event_type": {
-                "field_aggregation": {
-                    "buckets": [
+                        {"key": "svc_policy_sec_event", "count": "2"},
+                        {"key": "malicious_user_sec_event", "count": "3"},
                         {"key": "ddos_sec_event", "count": "4"},
                         {"key": "dos_sec_event", "count": "3"}
-                    ]
-                }
-            }
-        }
-    }
-
-
-@pytest.fixture
-def sample_country_attack_sources_response():
-    """Sample country and attack sources aggregation response."""
-    return {
-        "total_hits": "1517",
-        "aggs": {
-            "by_country": {
-                "field_aggregation": {
-                    "buckets": [
-                        {"key": "DE", "count": "1200"},
-                        {"key": "US", "count": "250"},
-                        {"key": "CN", "count": "67"}
-                    ]
-                }
-            },
-            "top_attack_sources": {
-                "multi_field_aggregation": {
-                    "buckets": [
-                        {
-                            "keys": {"country": "DE", "src_ip": "188.68.49.235"},
-                            "count": "1000"
-                        },
-                        {
-                            "keys": {"country": "US", "src_ip": "45.33.32.156"},
-                            "count": "200"
-                        },
-                        {
-                            "keys": {"country": "DE", "src_ip": "95.217.163.246"},
-                            "count": "150"
-                        }
                     ]
                 }
             }
