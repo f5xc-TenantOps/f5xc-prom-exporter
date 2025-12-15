@@ -241,10 +241,14 @@ class F5XCClient:
         event_types: list[str],
         step_seconds: int = 300
     ) -> dict[str, Any]:
-        """Get security event counts aggregated by load balancer.
+        """Get security event counts at namespace level.
 
         Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_security/events/aggregation
-        to get counts of security events by type and load balancer.
+        to get counts of security events by type for the entire namespace.
+
+        Note: Nested sub_aggs (VH_NAME -> SEC_EVENT_TYPE) don't work in this API,
+        so we aggregate at namespace level only. Per-LB security totals come from
+        the app_firewall/metrics API instead.
 
         Args:
             namespace: The namespace to query
@@ -253,7 +257,7 @@ class F5XCClient:
             step_seconds: Time window for event aggregation (default: 300s / 5min)
 
         Returns:
-            Response containing event counts aggregated by VH_NAME and SEC_EVENT_TYPE
+            Response containing event counts aggregated by SEC_EVENT_TYPE
         """
         endpoint = f"/api/data/namespaces/{namespace}/app_security/events/aggregation"
 
@@ -267,15 +271,10 @@ class F5XCClient:
             "namespace": namespace,
             "query": f'{{sec_event_type=~"{event_filter}"}}',
             "aggs": {
-                "by_lb_and_type": {
+                "by_event_type": {
                     "field_aggregation": {
-                        "field": "VH_NAME",
-                        "topk": 100,
-                        "sub_aggs": {
-                            "by_type": {
-                                "field_aggregation": {"field": "SEC_EVENT_TYPE"}
-                            }
-                        }
+                        "field": "SEC_EVENT_TYPE",
+                        "topk": 100
                     }
                 }
             },

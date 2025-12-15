@@ -183,36 +183,28 @@ class TestSecurityCollector:
         mock_client,
         sample_security_events_aggregation_response
     ):
-        """Test security events aggregation processing."""
+        """Test security events aggregation processing.
+
+        Event counts are now namespace-level only (no per-LB breakdown)
+        because nested sub_aggs don't work in the F5 XC API.
+        """
         collector = SecurityCollector(mock_client)
         collector._process_event_aggregation(sample_security_events_aggregation_response, "demo-shop")
 
-        # Check WAF events
-        waf_events = collector.waf_events.labels(
-            namespace="demo-shop",
-            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
-        )
+        # Check WAF events (namespace-only label)
+        waf_events = collector.waf_events.labels(namespace="demo-shop")
         assert waf_events._value._value == 20.0
 
-        # Check bot defense events
-        bot_defense_events = collector.bot_defense_events.labels(
-            namespace="demo-shop",
-            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
-        )
+        # Check bot defense events (namespace-only label)
+        bot_defense_events = collector.bot_defense_events.labels(namespace="demo-shop")
         assert bot_defense_events._value._value == 15.0
 
-        # Check API events
-        api_events = collector.api_events.labels(
-            namespace="demo-shop",
-            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
-        )
+        # Check API events (namespace-only label)
+        api_events = collector.api_events.labels(namespace="demo-shop")
         assert api_events._value._value == 5.0
 
-        # Check service policy events
-        svc_policy_events = collector.service_policy_events.labels(
-            namespace="demo-shop",
-            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
-        )
+        # Check service policy events (namespace-only label)
+        svc_policy_events = collector.service_policy_events.labels(namespace="demo-shop")
         assert svc_policy_events._value._value == 2.0
 
     def test_malicious_user_events_processing(
@@ -220,14 +212,15 @@ class TestSecurityCollector:
         mock_client,
         sample_malicious_user_events_response
     ):
-        """Test malicious user events processing."""
+        """Test malicious user events processing.
+
+        Events are now namespace-level only (no per-LB breakdown).
+        """
         collector = SecurityCollector(mock_client)
         collector._process_malicious_user_aggregation(sample_malicious_user_events_response, "demo-shop")
 
-        malicious_user_events = collector.malicious_user_events.labels(
-            namespace="demo-shop",
-            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
-        )
+        # Namespace-only label
+        malicious_user_events = collector.malicious_user_events.labels(namespace="demo-shop")
         assert malicious_user_events._value._value == 3.0
 
     def test_dos_events_processing(
@@ -235,14 +228,16 @@ class TestSecurityCollector:
         mock_client,
         sample_dos_events_response
     ):
-        """Test DoS events processing."""
+        """Test DoS events processing.
+
+        Events are now namespace-level only (no per-LB breakdown).
+        DoS events include both ddos_sec_event and dos_sec_event types (summed).
+        """
         collector = SecurityCollector(mock_client)
         collector._process_dos_aggregation(sample_dos_events_response, "demo-shop")
 
-        dos_events = collector.dos_events.labels(
-            namespace="demo-shop",
-            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
-        )
+        # Namespace-only label, sum of ddos (4) + dos (3) = 7
+        dos_events = collector.dos_events.labels(namespace="demo-shop")
         assert dos_events._value._value == 7.0
 
     def test_security_collection_failure(self, mock_client):

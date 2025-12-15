@@ -295,29 +295,21 @@ def sample_malicious_bot_metrics_response():
 
 @pytest.fixture
 def sample_security_events_aggregation_response():
-    """Sample security events aggregation response from app_security/events/aggregation."""
+    """Sample security events aggregation response from app_security/events/aggregation.
+
+    Uses single-level aggregation by SEC_EVENT_TYPE because nested sub_aggs
+    (VH_NAME -> SEC_EVENT_TYPE) don't work in the F5 XC API.
+    """
     return {
         "total_hits": "42",
         "aggs": {
-            "by_lb_and_type": {
+            "by_event_type": {
                 "field_aggregation": {
                     "buckets": [
-                        {
-                            "key": "ves-io-http-loadbalancer-demo-shop-fe",
-                            "count": "42",
-                            "sub_aggs": {
-                                "by_type": {
-                                    "field_aggregation": {
-                                        "buckets": [
-                                            {"key": "waf_sec_event", "count": "20"},
-                                            {"key": "bot_defense_sec_event", "count": "15"},
-                                            {"key": "api_sec_event", "count": "5"},
-                                            {"key": "svc_policy_sec_event", "count": "2"}
-                                        ]
-                                    }
-                                }
-                            }
-                        }
+                        {"key": "waf_sec_event", "count": "20"},
+                        {"key": "bot_defense_sec_event", "count": "15"},
+                        {"key": "api_sec_event", "count": "5"},
+                        {"key": "svc_policy_sec_event", "count": "2"}
                     ]
                 }
             }
@@ -327,17 +319,17 @@ def sample_security_events_aggregation_response():
 
 @pytest.fixture
 def sample_malicious_user_events_response():
-    """Sample malicious user events aggregation response."""
+    """Sample malicious user events aggregation response.
+
+    Uses single-level aggregation by SEC_EVENT_TYPE at namespace level.
+    """
     return {
         "total_hits": "3",
         "aggs": {
-            "by_lb_and_type": {
+            "by_event_type": {
                 "field_aggregation": {
                     "buckets": [
-                        {
-                            "key": "ves-io-http-loadbalancer-demo-shop-fe",
-                            "count": "3"
-                        }
+                        {"key": "malicious_user_sec_event", "count": "3"}
                     ]
                 }
             }
@@ -347,17 +339,19 @@ def sample_malicious_user_events_response():
 
 @pytest.fixture
 def sample_dos_events_response():
-    """Sample DoS events aggregation response."""
+    """Sample DoS events aggregation response.
+
+    Uses single-level aggregation by SEC_EVENT_TYPE at namespace level.
+    May include both ddos_sec_event and dos_sec_event types.
+    """
     return {
         "total_hits": "7",
         "aggs": {
-            "by_lb_and_type": {
+            "by_event_type": {
                 "field_aggregation": {
                     "buckets": [
-                        {
-                            "key": "ves-io-http-loadbalancer-demo-shop-fe",
-                            "count": "7"
-                        }
+                        {"key": "ddos_sec_event", "count": "4"},
+                        {"key": "dos_sec_event", "count": "3"}
                     ]
                 }
             }
