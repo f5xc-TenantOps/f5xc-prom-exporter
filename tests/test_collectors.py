@@ -226,54 +226,89 @@ class TestSyntheticMonitoringCollector:
         collector = SyntheticMonitoringCollector(mock_client)
 
         assert collector.client == mock_client
-        assert collector.http_check_success is not None
-        assert collector.dns_check_success is not None
-        assert collector.ping_check_success is not None
+        # HTTP monitor metrics
+        assert collector.http_monitors_total is not None
+        assert collector.http_monitors_healthy is not None
+        assert collector.http_monitors_critical is not None
+        # DNS monitor metrics
+        assert collector.dns_monitors_total is not None
+        assert collector.dns_monitors_healthy is not None
+        assert collector.dns_monitors_critical is not None
+        # Collection status metrics
+        assert collector.collection_success is not None
+        assert collector.collection_duration is not None
 
-    def test_synthetic_metrics_collection(self, mock_client, sample_synthetic_response, sample_synthetic_summary_response):
-        """Test synthetic monitoring metrics collection with new API methods."""
-        mock_client.get_synthetic_monitoring_health.return_value = sample_synthetic_response
-        mock_client.get_http_monitors_health.return_value = sample_synthetic_response
-        mock_client.get_synthetic_monitoring_summary.return_value = sample_synthetic_summary_response
-
-        collector = SyntheticMonitoringCollector(mock_client)
-        collector.collect_metrics("system")
-
-        # Verify new API methods were called
-        mock_client.get_synthetic_monitoring_health.assert_called_once_with("system")
-        mock_client.get_http_monitors_health.assert_called_once_with("system")
-        mock_client.get_synthetic_monitoring_summary.assert_called_once_with("system")
-
-        # Check success metric
-        success_metric = collector.synthetic_collection_success.labels(namespace="system")
-        assert success_metric._value._value == 1
-
-    def test_http_monitor_processing(self, mock_client, sample_synthetic_response, sample_synthetic_summary_response):
-        """Test HTTP monitor data processing with new API structure."""
-        mock_client.get_synthetic_monitoring_health.return_value = sample_synthetic_response
-        mock_client.get_http_monitors_health.return_value = sample_synthetic_response
-        mock_client.get_synthetic_monitoring_summary.return_value = sample_synthetic_summary_response
+    def test_synthetic_metrics_collection(
+        self,
+        mock_client,
+        sample_synthetic_http_summary_response,
+        sample_synthetic_dns_summary_response
+    ):
+        """Test synthetic monitoring metrics collection with 2-call approach."""
+        mock_client.list_namespaces.return_value = ["demo-shop"]
+        mock_client.get_synthetic_summary.side_effect = [
+            sample_synthetic_http_summary_response,  # HTTP call
+            sample_synthetic_dns_summary_response,   # DNS call
+        ]
 
         collector = SyntheticMonitoringCollector(mock_client)
-        collector.collect_metrics("system")
+        collector.collect_metrics()
 
-        # Check HTTP success metric - using new structure
-        http_success = collector.http_check_success.labels(
-            namespace="system",
-            monitor_name="test-monitor",
-            location="global",
-            target_url="https://example.com"
-        )
-        assert http_success._value._value == 1
+        # Verify API was called with correct arguments (2 calls per namespace)
+        assert mock_client.get_synthetic_summary.call_count == 2
+        mock_client.get_synthetic_summary.assert_any_call("demo-shop", "http")
+        mock_client.get_synthetic_summary.assert_any_call("demo-shop", "dns")
 
-        # Check response time metric (150ms -> 0.15s)
-        response_time = collector.http_check_response_time.labels(
-            namespace="system",
-            monitor_name="test-monitor",
-            location="global",
-            target_url="https://example.com"
-        )
-        assert response_time._value._value == 0.15
+        # Check collection success metric
+        assert collector.collection_success._value._value == 1
+
+    def test_synthetic_http_summary_processing(
+        self,
+        mock_client,
+        sample_synthetic_http_summary_response
+    ):
+        """Test HTTP monitor summary data processing."""
+        mock_client.list_namespaces.return_value = ["demo-shop"]
+        mock_client.get_synthetic_summary.return_value = sample_synthetic_http_summary_response
+
+        collector = SyntheticMonitoringCollector(mock_client)
+        collector.collect_metrics()
+
+        # Check HTTP metrics were set correctly
+        http_total = collector.http_monitors_total.labels(namespace="demo-shop")
+        assert http_total._value._value == 2
+
+        http_healthy = collector.http_monitors_healthy.labels(namespace="demo-shop")
+        assert http_healthy._value._value == 2
+
+        http_critical = collector.http_monitors_critical.labels(namespace="demo-shop")
+        assert http_critical._value._value == 0
+
+    def test_synthetic_dns_summary_processing(
+        self,
+        mock_client,
+        sample_synthetic_dns_summary_response
+    ):
+        """Test DNS monitor summary data processing."""
+        mock_client.list_namespaces.return_value = ["demo-shop"]
+        # HTTP returns empty, DNS returns data
+        mock_client.get_synthetic_summary.side_effect = [
+            {"number_of_monitors": 0, "healthy_monitor_count": 0, "critical_monitor_count": 0},
+            sample_synthetic_dns_summary_response,
+        ]
+
+        collector = SyntheticMonitoringCollector(mock_client)
+        collector.collect_metrics()
+
+        # Check DNS metrics were set correctly
+        dns_total = collector.dns_monitors_total.labels(namespace="demo-shop")
+        assert dns_total._value._value == 3
+
+        dns_healthy = collector.dns_monitors_healthy.labels(namespace="demo-shop")
+        assert dns_healthy._value._value == 2
+
+        dns_critical = collector.dns_monitors_critical.labels(namespace="demo-shop")
+        assert dns_critical._value._value == 1
 
 
 class TestLoadBalancerCollector:
@@ -526,12 +561,15 @@ class TestCollectorIntegration:
         registry.register(security_collector.collection_success)
         registry.register(security_collector.collection_duration)
 
-        registry.register(synthetic_collector.http_check_success)
-        registry.register(synthetic_collector.dns_check_success)
-        registry.register(synthetic_collector.ping_check_success)
-        registry.register(synthetic_collector.http_check_response_time)
-        registry.register(synthetic_collector.synthetic_collection_success)
-        registry.register(synthetic_collector.synthetic_collection_duration)
+        # Synthetic monitoring metrics (namespace-level aggregates)
+        registry.register(synthetic_collector.http_monitors_total)
+        registry.register(synthetic_collector.http_monitors_healthy)
+        registry.register(synthetic_collector.http_monitors_critical)
+        registry.register(synthetic_collector.dns_monitors_total)
+        registry.register(synthetic_collector.dns_monitors_healthy)
+        registry.register(synthetic_collector.dns_monitors_critical)
+        registry.register(synthetic_collector.collection_success)
+        registry.register(synthetic_collector.collection_duration)
 
         # Unified LB collector metrics (HTTP, TCP, UDP)
         registry.register(lb_collector.http_request_rate)
@@ -556,7 +594,7 @@ class TestCollectorIntegration:
         metrics_str = metrics_output.decode('utf-8')
         assert 'f5xc_quota_limit' in metrics_str
         assert 'f5xc_security_collection_success' in metrics_str
-        assert 'f5xc_synthetic_collection_success' in metrics_str
+        assert 'f5xc_synthetic_http_monitors_total' in metrics_str
         # Unified LB metrics
         assert 'f5xc_http_lb_request_rate' in metrics_str
         assert 'f5xc_tcp_lb_connection_rate' in metrics_str
