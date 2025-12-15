@@ -185,11 +185,8 @@ class TestF5XCClient:
 
         client = F5XCClient(test_config)
 
-        # Test new security API methods
+        # Test security API methods (2 calls per namespace)
         result = client.get_app_firewall_metrics_for_namespace("demo-shop")
-        assert "data" in result
-
-        result = client.get_malicious_bot_metrics_for_namespace("demo-shop")
         assert "data" in result
 
         result = client.get_security_event_counts_for_namespace("demo-shop", ["waf_sec_event"])
