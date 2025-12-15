@@ -75,6 +75,52 @@ class TestQuotaCollector:
         )
         assert lb_util._value._value == 50.0  # 5/10 * 100
 
+    def test_quota_negative_values_handling(self, mock_client):
+        """Test quota utilization handles negative values correctly.
+
+        The API returns -1 for current usage when there's no data.
+        This should result in 0% utilization, not a negative percentage.
+        """
+        # Response with negative current value (API returns -1 for "no data")
+        response_with_negative = {
+            "quota_usage": {
+                "container_registry": {
+                    "limit": {"maximum": 25},
+                    "usage": {"current": -1}  # -1 means no data
+                },
+                "normal_resource": {
+                    "limit": {"maximum": 100},
+                    "usage": {"current": 50}
+                },
+                "unlimited_resource": {
+                    "limit": {"maximum": -1},  # -1 means unlimited
+                    "usage": {"current": 10}
+                }
+            }
+        }
+        mock_client.get_quota_usage.return_value = response_with_negative
+
+        collector = QuotaCollector(mock_client)
+        collector.collect_metrics("system")
+
+        # Negative current (-1) should result in 0% utilization, not -4%
+        container_util = collector.quota_utilization.labels(
+            namespace="system", resource_type="quota", resource_name="container_registry"
+        )
+        assert container_util._value._value == 0.0
+
+        # Normal case should calculate correctly
+        normal_util = collector.quota_utilization.labels(
+            namespace="system", resource_type="quota", resource_name="normal_resource"
+        )
+        assert normal_util._value._value == 50.0  # 50/100 * 100
+
+        # Unlimited (-1 limit) should result in 0% utilization
+        unlimited_util = collector.quota_utilization.labels(
+            namespace="system", resource_type="quota", resource_name="unlimited_resource"
+        )
+        assert unlimited_util._value._value == 0.0
+
 
 class TestSecurityCollector:
     """Test security metrics collector."""
