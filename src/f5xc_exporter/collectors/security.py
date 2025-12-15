@@ -35,12 +35,13 @@ class SecurityCollector:
         "dos_sec_event",
     ]
 
-    def __init__(self, client: F5XCClient):
+    def __init__(self, client: F5XCClient, tenant: str):
         """Initialize security collector."""
         self.client = client
+        self.tenant = tenant
 
         # --- Per-LB Metrics (from app_firewall/metrics API) ---
-        lb_labels = ["namespace", "load_balancer"]
+        lb_labels = ["tenant", "namespace", "load_balancer"]
         self.total_requests = Gauge(
             "f5xc_security_total_requests",
             "Total requests processed by app firewall",
@@ -59,7 +60,7 @@ class SecurityCollector:
 
         # --- Namespace-level Event Counts (from events/aggregation API) ---
         # Single aggregation query returns all event type counts
-        ns_labels = ["namespace"]
+        ns_labels = ["tenant", "namespace"]
         self.waf_events = Gauge(
             "f5xc_security_waf_events",
             "WAF security event count (namespace total)",
@@ -95,12 +96,12 @@ class SecurityCollector:
         self.collection_success = Gauge(
             "f5xc_security_collection_success",
             "Whether security metrics collection succeeded (1=success, 0=failure)",
-            []
+            ["tenant"]
         )
         self.collection_duration = Gauge(
             "f5xc_security_collection_duration_seconds",
             "Time taken to collect security metrics",
-            []
+            ["tenant"]
         )
 
     def collect_metrics(self) -> None:
@@ -127,10 +128,10 @@ class SecurityCollector:
                     )
                     continue
 
-            self.collection_success.set(1)
+            self.collection_success.labels(tenant=self.tenant).set(1)
 
             collection_duration = time.time() - start_time
-            self.collection_duration.set(collection_duration)
+            self.collection_duration.labels(tenant=self.tenant).set(collection_duration)
 
             logger.info(
                 "Security metrics collection successful",
@@ -144,7 +145,7 @@ class SecurityCollector:
                 error=str(e),
                 exc_info=True,
             )
-            self.collection_success.set(0)
+            self.collection_success.labels(tenant=self.tenant).set(0)
             raise
 
     def _collect_app_firewall_metrics(self, namespace: str) -> None:
@@ -219,6 +220,7 @@ class SecurityCollector:
                 try:
                     value = float(value_str)
                     gauge.labels(
+                        tenant=self.tenant,
                         namespace=namespace,
                         load_balancer=load_balancer
                     ).set(value)
@@ -277,10 +279,10 @@ class SecurityCollector:
 
             gauge = self._get_gauge_for_event_type(event_type)
             if gauge:
-                gauge.labels(namespace=namespace).set(count)
+                gauge.labels(tenant=self.tenant, namespace=namespace).set(count)
 
         # Set combined DoS count
-        self.dos_events.labels(namespace=namespace).set(dos_total)
+        self.dos_events.labels(tenant=self.tenant, namespace=namespace).set(dos_total)
 
     def _get_gauge_for_app_firewall_type(self, metric_type: str) -> Optional[Gauge]:
         """Get the appropriate gauge for an app firewall metric type."""

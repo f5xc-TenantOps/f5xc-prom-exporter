@@ -55,12 +55,13 @@ class LoadBalancerCollector:
         "REQUEST_TO_ORIGIN_RATE": "request_to_origin_rate",
     }
 
-    def __init__(self, client: F5XCClient):
+    def __init__(self, client: F5XCClient, tenant: str):
         """Initialize unified load balancer collector."""
         self.client = client
+        self.tenant = tenant
 
         # Common labels for all metrics
-        labels = ["namespace", "load_balancer", "site", "direction"]
+        labels = ["tenant", "namespace", "load_balancer", "site", "direction"]
 
         # --- HTTP LB Metrics ---
         self.http_request_rate = Gauge(
@@ -212,29 +213,29 @@ class LoadBalancerCollector:
         self.collection_success = Gauge(
             "f5xc_lb_collection_success",
             "Whether LB metrics collection succeeded (1=success, 0=failure)",
-            []
+            ["tenant"]
         )
         self.collection_duration = Gauge(
             "f5xc_lb_collection_duration_seconds",
             "Time taken to collect all LB metrics",
-            []
+            ["tenant"]
         )
 
         # Count metrics by type
         self.http_lb_count = Gauge(
             "f5xc_http_lb_count",
             "Number of HTTP load balancers discovered",
-            []
+            ["tenant"]
         )
         self.tcp_lb_count = Gauge(
             "f5xc_tcp_lb_count",
             "Number of TCP load balancers discovered",
-            []
+            ["tenant"]
         )
         self.udp_lb_count = Gauge(
             "f5xc_udp_lb_count",
             "Number of UDP load balancers discovered",
-            []
+            ["tenant"]
         )
 
     def collect_metrics(self) -> None:
@@ -251,15 +252,15 @@ class LoadBalancerCollector:
             counts = self._process_response(data)
 
             # Update count metrics
-            self.http_lb_count.set(counts.get("HTTP_LOAD_BALANCER", 0))
-            self.tcp_lb_count.set(counts.get("TCP_LOAD_BALANCER", 0))
-            self.udp_lb_count.set(counts.get("UDP_LOAD_BALANCER", 0))
+            self.http_lb_count.labels(tenant=self.tenant).set(counts.get("HTTP_LOAD_BALANCER", 0))
+            self.tcp_lb_count.labels(tenant=self.tenant).set(counts.get("TCP_LOAD_BALANCER", 0))
+            self.udp_lb_count.labels(tenant=self.tenant).set(counts.get("UDP_LOAD_BALANCER", 0))
 
             # Mark collection as successful
-            self.collection_success.set(1)
+            self.collection_success.labels(tenant=self.tenant).set(1)
 
             collection_duration = time.time() - start_time
-            self.collection_duration.set(collection_duration)
+            self.collection_duration.labels(tenant=self.tenant).set(collection_duration)
 
             logger.info(
                 "LB metrics collection successful",
@@ -275,7 +276,7 @@ class LoadBalancerCollector:
                 error=str(e),
                 exc_info=True,
             )
-            self.collection_success.set(0)
+            self.collection_success.labels(tenant=self.tenant).set(0)
             raise
 
     def _process_response(self, data: dict[str, Any]) -> dict[str, int]:
@@ -374,6 +375,7 @@ class LoadBalancerCollector:
         gauge = self._get_gauge_for_metric(metric_type, lb_type)
         if gauge:
             gauge.labels(
+                tenant=self.tenant,
                 namespace=namespace,
                 load_balancer=load_balancer,
                 site=site,

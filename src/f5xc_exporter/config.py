@@ -45,10 +45,10 @@ class Config(BaseSettings):
 
     @property
     def tenant_name(self) -> str:
-        """Extract tenant name from tenant URL."""
+        """Extract tenant name from tenant URL, normalized to lowercase."""
         # Extract tenant name from URL like https://f5-sales-demo.console.ves.volterra.io
         hostname = str(self.f5xc_tenant_url).split("//")[1]
-        return hostname.split(".")[0]
+        return hostname.split(".")[0].lower()
 
 
 def get_config() -> Config:
