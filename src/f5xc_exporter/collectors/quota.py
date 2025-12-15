@@ -135,7 +135,8 @@ class QuotaCollector:
                         ).set(current_val)
 
                         # Calculate utilization percentage
-                        utilization = (current_val / limit_val * 100) if limit_val > 0 else 0
+                        # Skip if limit <= 0 (unlimited) or current < 0 (no data)
+                        utilization = (current_val / limit_val * 100) if limit_val > 0 and current_val >= 0 else 0
                         self.quota_utilization.labels(
                             namespace=namespace,
                             resource_type=resource_type,

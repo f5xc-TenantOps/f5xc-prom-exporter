@@ -83,8 +83,12 @@ class TestMetricsServerIntegration:
             mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
             mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
 
-            # Mock synthetic monitoring
-            mock_client.get_synthetic_monitoring_metrics.return_value = {"monitors": []}
+            # Mock synthetic monitoring (2 calls per namespace: HTTP and DNS)
+            mock_client.get_synthetic_summary.return_value = {
+                "critical_monitor_count": 0,
+                "number_of_monitors": 0,
+                "healthy_monitor_count": 0
+            }
 
             # Create and start metrics server
             server = MetricsServer(test_config)
