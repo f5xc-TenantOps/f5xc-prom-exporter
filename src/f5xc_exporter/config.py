@@ -28,7 +28,7 @@ class Config(BaseSettings):
     f5xc_tcp_lb_interval: int = Field(default=120, alias="F5XC_TCP_LB_INTERVAL")
     f5xc_udp_lb_interval: int = Field(default=120, alias="F5XC_UDP_LB_INTERVAL")
     f5xc_dns_interval: int = Field(default=120, alias="F5XC_DNS_INTERVAL")
-    f5xc_security_interval: int = Field(default=300, alias="F5XC_SECURITY_INTERVAL")
+    f5xc_security_interval: int = Field(default=120, alias="F5XC_SECURITY_INTERVAL")
     f5xc_synthetic_interval: int = Field(default=120, alias="F5XC_SYNTHETIC_INTERVAL")
 
     # Rate limiting
