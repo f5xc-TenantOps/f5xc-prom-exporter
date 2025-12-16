@@ -2,7 +2,7 @@
 
 import time
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 import requests
@@ -581,6 +581,73 @@ class F5XCClient:
         logger.info("LB metrics collection complete", total_nodes=len(all_nodes))
 
         return {"data": {"nodes": all_nodes, "edges": []}}
+
+    def get_dns_zone_metrics(
+        self,
+        group_by: Optional[list[str]] = None,
+        step_seconds: int = 300
+    ) -> dict[str, Any]:
+        """Get DNS zone metrics from system namespace.
+
+        Uses F5XC API endpoint: POST /api/data/namespaces/system/dns_zones/metrics
+        DNS zones are not namespaced - all data is in the system namespace.
+
+        Args:
+            group_by: List of grouping fields. Options:
+                      DNS_ZONE_NAME, COUNTRY_CODE, DOMAIN, QUERY_TYPE,
+                      RESPONSE_CODE, CLIENT_SUBNET
+                      Default: ["DNS_ZONE_NAME"]
+            step_seconds: Time step for metrics aggregation (default: 300s / 5min)
+
+        Returns:
+            Response containing DNS zone metrics grouped by the specified fields
+        """
+        endpoint = "/api/data/namespaces/system/dns_zones/metrics"
+
+        if group_by is None:
+            group_by = ["DNS_ZONE_NAME"]
+
+        end_time = int(time.time())
+        start_time = end_time - step_seconds
+
+        payload = {
+            "namespace": "system",
+            "group_by": group_by,
+            "filter": "",
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            "step": f"{step_seconds}s"
+        }
+
+        return self.post(endpoint, json=payload)
+
+    def get_dns_lb_health_status(self) -> dict[str, Any]:
+        """Get DNS Load Balancer health status from system namespace.
+
+        Uses F5XC API endpoint:
+        GET /api/data/namespaces/system/dns_load_balancers/health_status
+
+        DNS LBs are not namespaced - all data is in the system namespace.
+
+        Returns:
+            Response containing health status for all DNS load balancers
+        """
+        endpoint = "/api/data/namespaces/system/dns_load_balancers/health_status"
+        return self.get(endpoint)
+
+    def get_dns_lb_pool_member_health(self) -> dict[str, Any]:
+        """Get DNS Load Balancer pool member health status from system namespace.
+
+        Uses F5XC API endpoint:
+        GET /api/data/namespaces/system/dns_load_balancers/pool_members_health_status
+
+        DNS LBs are not namespaced - all data is in the system namespace.
+
+        Returns:
+            Response containing health status for all DNS LB pool members
+        """
+        endpoint = "/api/data/namespaces/system/dns_load_balancers/pool_members_health_status"
+        return self.get(endpoint)
 
     def close(self) -> None:
         """Close the session."""

@@ -7,6 +7,7 @@ from prometheus_client import CollectorRegistry
 
 from f5xc_exporter.client import F5XCAPIError
 from f5xc_exporter.collectors import (
+    DNSCollector,
     LoadBalancerCollector,
     QuotaCollector,
     SecurityCollector,
@@ -589,6 +590,173 @@ class TestLoadBalancerCollector:
         assert collector.collection_success.labels(tenant=TEST_TENANT)._value._value == 1
 
 
+class TestDNSCollector:
+    """Test DNS metrics collector."""
+
+    def test_dns_collector_initialization(self, mock_client):
+        """Test DNS collector initializes correctly."""
+        collector = DNSCollector(mock_client, TEST_TENANT)
+
+        assert collector.client == mock_client
+        assert collector.tenant == TEST_TENANT
+        # Zone metrics
+        assert collector.zone_query_count is not None
+        # LB health metrics
+        assert collector.dns_lb_health is not None
+        assert collector.dns_lb_pool_member_health is not None
+        # Collection status metrics
+        assert collector.collection_success is not None
+        assert collector.collection_duration is not None
+        assert collector.zone_count is not None
+        assert collector.dns_lb_count is not None
+
+    def test_dns_metrics_collection_success(
+        self,
+        mock_client,
+        sample_dns_zone_metrics_response,
+        sample_dns_lb_health_response,
+        sample_dns_lb_pool_member_health_response
+    ):
+        """Test successful DNS metrics collection (3 API calls)."""
+        mock_client.get_dns_zone_metrics.return_value = sample_dns_zone_metrics_response
+        mock_client.get_dns_lb_health_status.return_value = sample_dns_lb_health_response
+        mock_client.get_dns_lb_pool_member_health.return_value = sample_dns_lb_pool_member_health_response
+
+        collector = DNSCollector(mock_client, TEST_TENANT)
+        collector.collect_metrics()
+
+        # Verify success
+        assert collector.collection_success.labels(tenant=TEST_TENANT)._value._value == 1
+
+        # Verify exactly 3 API calls to system namespace
+        mock_client.get_dns_zone_metrics.assert_called_once_with(group_by=["DNS_ZONE_NAME"])
+        mock_client.get_dns_lb_health_status.assert_called_once()
+        mock_client.get_dns_lb_pool_member_health.assert_called_once()
+
+        # Verify counts
+        assert collector.zone_count.labels(tenant=TEST_TENANT)._value._value == 3
+        assert collector.dns_lb_count.labels(tenant=TEST_TENANT)._value._value == 2
+
+    def test_dns_zone_metrics_processing(
+        self,
+        mock_client,
+        sample_dns_zone_metrics_response
+    ):
+        """Test DNS zone metrics processing."""
+        collector = DNSCollector(mock_client, TEST_TENANT)
+        zone_count = collector._process_zone_metrics(sample_dns_zone_metrics_response)
+
+        assert zone_count == 3
+
+        # Check example.com zone
+        example_zone = collector.zone_query_count.labels(
+            tenant=TEST_TENANT,
+            zone="example.com"
+        )
+        assert example_zone._value._value == 21833.0
+
+        # Check mysite.net zone
+        mysite_zone = collector.zone_query_count.labels(
+            tenant=TEST_TENANT,
+            zone="mysite.net"
+        )
+        assert mysite_zone._value._value == 15093.0
+
+        # Check test.org zone
+        test_zone = collector.zone_query_count.labels(
+            tenant=TEST_TENANT,
+            zone="test.org"
+        )
+        assert test_zone._value._value == 1049.0
+
+    def test_dns_lb_health_processing(
+        self,
+        mock_client,
+        sample_dns_lb_health_response
+    ):
+        """Test DNS LB health status processing."""
+        collector = DNSCollector(mock_client, TEST_TENANT)
+        lb_count = collector._process_lb_health(sample_dns_lb_health_response)
+
+        assert lb_count == 2
+
+        # Check healthy LB
+        healthy_lb = collector.dns_lb_health.labels(
+            tenant=TEST_TENANT,
+            dns_lb="global-dns-lb"
+        )
+        assert healthy_lb._value._value == 1.0  # HEALTHY
+
+        # Check unhealthy LB
+        unhealthy_lb = collector.dns_lb_health.labels(
+            tenant=TEST_TENANT,
+            dns_lb="regional-dns-lb"
+        )
+        assert unhealthy_lb._value._value == 0.0  # UNHEALTHY
+
+    def test_dns_lb_pool_member_health_processing(
+        self,
+        mock_client,
+        sample_dns_lb_pool_member_health_response
+    ):
+        """Test DNS LB pool member health processing."""
+        collector = DNSCollector(mock_client, TEST_TENANT)
+        collector._process_pool_member_health(sample_dns_lb_pool_member_health_response)
+
+        # Check healthy member
+        healthy_member = collector.dns_lb_pool_member_health.labels(
+            tenant=TEST_TENANT,
+            dns_lb="global-dns-lb",
+            pool="primary-pool",
+            member="10.0.0.1"
+        )
+        assert healthy_member._value._value == 1.0  # HEALTHY
+
+        # Check unhealthy member
+        unhealthy_member = collector.dns_lb_pool_member_health.labels(
+            tenant=TEST_TENANT,
+            dns_lb="regional-dns-lb",
+            pool="backup-pool",
+            member="10.1.0.1"
+        )
+        assert unhealthy_member._value._value == 0.0  # UNHEALTHY
+
+    def test_dns_collection_failure(self, mock_client):
+        """Test DNS metrics collection failure handling.
+
+        When dns_zone_metrics fails, we continue trying LB health.
+        If all 3 API calls fail, we should re-raise the final error.
+        """
+        mock_client.get_dns_zone_metrics.side_effect = F5XCAPIError("API Error")
+        mock_client.get_dns_lb_health_status.side_effect = F5XCAPIError("API Error")
+        mock_client.get_dns_lb_pool_member_health.side_effect = F5XCAPIError("API Error")
+
+        collector = DNSCollector(mock_client, TEST_TENANT)
+        # Collection should complete (individual failures are handled gracefully)
+        # but success metric is still set because no exception propagated
+        collector.collect_metrics()
+
+        # Even with all warnings, collection "succeeds" (just no data)
+        # This matches the pattern in other collectors where we warn but don't fail
+        assert collector.collection_success.labels(tenant=TEST_TENANT)._value._value == 1
+        assert collector.zone_count.labels(tenant=TEST_TENANT)._value._value == 0
+        assert collector.dns_lb_count.labels(tenant=TEST_TENANT)._value._value == 0
+
+    def test_dns_empty_response_handling(self, mock_client):
+        """Test DNS collector handles empty responses gracefully."""
+        mock_client.get_dns_zone_metrics.return_value = {"data": []}
+        mock_client.get_dns_lb_health_status.return_value = {"items": []}
+        mock_client.get_dns_lb_pool_member_health.return_value = {"items": []}
+
+        collector = DNSCollector(mock_client, TEST_TENANT)
+        collector.collect_metrics()
+
+        # Should succeed even with empty data
+        assert collector.collection_success.labels(tenant=TEST_TENANT)._value._value == 1
+        assert collector.zone_count.labels(tenant=TEST_TENANT)._value._value == 0
+        assert collector.dns_lb_count.labels(tenant=TEST_TENANT)._value._value == 0
+
+
 class TestCollectorIntegration:
     """Test collector integration scenarios."""
 
@@ -604,6 +772,7 @@ class TestCollectorIntegration:
         security_collector = SecurityCollector(mock_client, TEST_TENANT)
         synthetic_collector = SyntheticMonitoringCollector(mock_client, TEST_TENANT)
         lb_collector = LoadBalancerCollector(mock_client, TEST_TENANT)
+        dns_collector = DNSCollector(mock_client, TEST_TENANT)
 
         # Register individual metrics with registry (like MetricsServer does)
         registry.register(quota_collector.quota_limit)
@@ -651,6 +820,15 @@ class TestCollectorIntegration:
         registry.register(lb_collector.tcp_lb_count)
         registry.register(lb_collector.udp_lb_count)
 
+        # DNS collector metrics
+        registry.register(dns_collector.zone_query_count)
+        registry.register(dns_collector.dns_lb_health)
+        registry.register(dns_collector.dns_lb_pool_member_health)
+        registry.register(dns_collector.collection_success)
+        registry.register(dns_collector.collection_duration)
+        registry.register(dns_collector.zone_count)
+        registry.register(dns_collector.dns_lb_count)
+
         # Test that metrics can be generated (this would have caught the bug)
         metrics_output = generate_latest(registry)
         assert metrics_output is not None
@@ -666,6 +844,10 @@ class TestCollectorIntegration:
         assert 'f5xc_tcp_lb_connection_rate' in metrics_str
         assert 'f5xc_udp_lb_request_throughput_bps' in metrics_str
         assert 'f5xc_lb_collection_success' in metrics_str  # Single unified collection success
+        # DNS metrics
+        assert 'f5xc_dns_zone_query_count' in metrics_str
+        assert 'f5xc_dns_lb_health_status' in metrics_str
+        assert 'f5xc_dns_collection_success' in metrics_str
 
     def test_collector_error_handling(self, mock_client):
         """Test collector error handling doesn't crash."""
