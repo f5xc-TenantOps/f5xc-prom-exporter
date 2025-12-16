@@ -25,12 +25,13 @@ class SyntheticMonitoringCollector:
     - Call 2: global-summary?monitorType=dns
     """
 
-    def __init__(self, client: F5XCClient):
+    def __init__(self, client: F5XCClient, tenant: str):
         """Initialize synthetic monitoring collector."""
         self.client = client
+        self.tenant = tenant
 
         # Namespace labels for all metrics
-        ns_labels = ["namespace"]
+        ns_labels = ["tenant", "namespace"]
 
         # HTTP monitor metrics
         self.http_monitors_total = Gauge(
@@ -66,14 +67,16 @@ class SyntheticMonitoringCollector:
             ns_labels
         )
 
-        # Collection status metrics (no labels - global)
+        # Collection status metrics
         self.collection_success = Gauge(
             "f5xc_synthetic_collection_success",
-            "Whether synthetic monitoring collection succeeded (1=success, 0=failure)"
+            "Whether synthetic monitoring collection succeeded (1=success, 0=failure)",
+            ["tenant"]
         )
         self.collection_duration = Gauge(
             "f5xc_synthetic_collection_duration_seconds",
-            "Time taken to collect synthetic monitoring metrics"
+            "Time taken to collect synthetic monitoring metrics",
+            ["tenant"]
         )
 
     def collect_metrics(self) -> None:
@@ -89,8 +92,8 @@ class SyntheticMonitoringCollector:
                 self._collect_dns_summary(namespace)
 
             duration = time.time() - start_time
-            self.collection_success.set(1)
-            self.collection_duration.set(duration)
+            self.collection_success.labels(tenant=self.tenant).set(1)
+            self.collection_duration.labels(tenant=self.tenant).set(duration)
 
             logger.info(
                 "Synthetic monitoring metrics collection successful",
@@ -104,8 +107,8 @@ class SyntheticMonitoringCollector:
                 error=str(e),
                 exc_info=True
             )
-            self.collection_success.set(0)
-            self.collection_duration.set(time.time() - start_time)
+            self.collection_success.labels(tenant=self.tenant).set(0)
+            self.collection_duration.labels(tenant=self.tenant).set(time.time() - start_time)
 
     def _collect_http_summary(self, namespace: str) -> None:
         """Collect HTTP monitor summary for a namespace."""
@@ -165,13 +168,13 @@ class SyntheticMonitoringCollector:
         critical = data.get("critical_monitor_count", 0)
 
         if monitor_type == "http":
-            self.http_monitors_total.labels(namespace=namespace).set(total)
-            self.http_monitors_healthy.labels(namespace=namespace).set(healthy)
-            self.http_monitors_critical.labels(namespace=namespace).set(critical)
+            self.http_monitors_total.labels(tenant=self.tenant, namespace=namespace).set(total)
+            self.http_monitors_healthy.labels(tenant=self.tenant, namespace=namespace).set(healthy)
+            self.http_monitors_critical.labels(tenant=self.tenant, namespace=namespace).set(critical)
         elif monitor_type == "dns":
-            self.dns_monitors_total.labels(namespace=namespace).set(total)
-            self.dns_monitors_healthy.labels(namespace=namespace).set(healthy)
-            self.dns_monitors_critical.labels(namespace=namespace).set(critical)
+            self.dns_monitors_total.labels(tenant=self.tenant, namespace=namespace).set(total)
+            self.dns_monitors_healthy.labels(tenant=self.tenant, namespace=namespace).set(healthy)
+            self.dns_monitors_critical.labels(tenant=self.tenant, namespace=namespace).set(critical)
 
         logger.debug(
             "Processed synthetic monitor summary",

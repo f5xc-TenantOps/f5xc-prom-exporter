@@ -13,39 +13,40 @@ logger = structlog.get_logger()
 class QuotaCollector:
     """Collector for F5XC quota metrics."""
 
-    def __init__(self, client: F5XCClient):
+    def __init__(self, client: F5XCClient, tenant: str):
         """Initialize quota collector."""
         self.client = client
+        self.tenant = tenant
 
         # Prometheus metrics
         self.quota_limit = Gauge(
             "f5xc_quota_limit",
             "F5XC quota limit",
-            ["namespace", "resource_type", "resource_name"]
+            ["tenant", "namespace", "resource_type", "resource_name"]
         )
 
         self.quota_current = Gauge(
             "f5xc_quota_current",
             "F5XC quota current usage",
-            ["namespace", "resource_type", "resource_name"]
+            ["tenant", "namespace", "resource_type", "resource_name"]
         )
 
         self.quota_utilization = Gauge(
             "f5xc_quota_utilization_percentage",
             "F5XC quota utilization percentage",
-            ["namespace", "resource_type", "resource_name"]
+            ["tenant", "namespace", "resource_type", "resource_name"]
         )
 
         self.quota_collection_success = Gauge(
             "f5xc_quota_collection_success",
             "Whether quota collection succeeded",
-            ["namespace"]
+            ["tenant", "namespace"]
         )
 
         self.quota_collection_duration = Gauge(
             "f5xc_quota_collection_duration_seconds",
             "Time taken to collect quota metrics",
-            ["namespace"]
+            ["tenant", "namespace"]
         )
 
     def collect_metrics(self, namespace: str = "system") -> None:
@@ -64,10 +65,10 @@ class QuotaCollector:
             self._process_quota_data(quota_data, namespace)
 
             # Mark collection as successful
-            self.quota_collection_success.labels(namespace=namespace).set(1)
+            self.quota_collection_success.labels(tenant=self.tenant, namespace=namespace).set(1)
 
             collection_duration = time.time() - start_time
-            self.quota_collection_duration.labels(namespace=namespace).set(collection_duration)
+            self.quota_collection_duration.labels(tenant=self.tenant, namespace=namespace).set(collection_duration)
 
             logger.info(
                 "Quota metrics collection successful",
@@ -82,7 +83,7 @@ class QuotaCollector:
                 error=str(e),
                 exc_info=True,
             )
-            self.quota_collection_success.labels(namespace=namespace).set(0)
+            self.quota_collection_success.labels(tenant=self.tenant, namespace=namespace).set(0)
             raise
 
     def _process_quota_data(self, quota_data: dict[str, Any], namespace: str) -> None:
@@ -123,12 +124,14 @@ class QuotaCollector:
 
                         # Set Prometheus metrics
                         self.quota_limit.labels(
+                            tenant=self.tenant,
                             namespace=namespace,
                             resource_type=resource_type,
                             resource_name=resource_name
                         ).set(limit_val)
 
                         self.quota_current.labels(
+                            tenant=self.tenant,
                             namespace=namespace,
                             resource_type=resource_type,
                             resource_name=resource_name
@@ -138,6 +141,7 @@ class QuotaCollector:
                         # Skip if limit <= 0 (unlimited) or current < 0 (no data)
                         utilization = (current_val / limit_val * 100) if limit_val > 0 and current_val >= 0 else 0
                         self.quota_utilization.labels(
+                            tenant=self.tenant,
                             namespace=namespace,
                             resource_type=resource_type,
                             resource_name=resource_name
@@ -201,12 +205,14 @@ class QuotaCollector:
         if limit is not None and current is not None:
             # Set Prometheus metrics
             self.quota_limit.labels(
+                tenant=self.tenant,
                 namespace=namespace,
                 resource_type=resource_type,
                 resource_name=resource_name
             ).set(limit)
 
             self.quota_current.labels(
+                tenant=self.tenant,
                 namespace=namespace,
                 resource_type=resource_type,
                 resource_name=resource_name
@@ -215,6 +221,7 @@ class QuotaCollector:
             # Calculate utilization percentage
             utilization = (current / limit * 100) if limit > 0 else 0
             self.quota_utilization.labels(
+                tenant=self.tenant,
                 namespace=namespace,
                 resource_type=resource_type,
                 resource_name=resource_name

@@ -80,10 +80,11 @@ class MetricsServer:
         self.client = F5XCClient(config)
 
         # Initialize collectors and register them with the registry
-        self.quota_collector = QuotaCollector(self.client)
-        self.security_collector = SecurityCollector(self.client)
-        self.synthetic_monitoring_collector = SyntheticMonitoringCollector(self.client)
-        self.lb_collector = LoadBalancerCollector(self.client)
+        tenant = config.tenant_name
+        self.quota_collector = QuotaCollector(self.client, tenant)
+        self.security_collector = SecurityCollector(self.client, tenant)
+        self.synthetic_monitoring_collector = SyntheticMonitoringCollector(self.client, tenant)
+        self.lb_collector = LoadBalancerCollector(self.client, tenant)
 
         # Register individual metrics with Prometheus registry
         # Quota metrics
