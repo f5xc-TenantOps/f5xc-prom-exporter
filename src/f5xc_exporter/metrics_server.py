@@ -199,6 +199,8 @@ class MetricsServer:
             quota_thread.start()
             self.collection_threads["quota"] = quota_thread
             logger.info("Started quota metrics collection", interval=self.config.f5xc_quota_interval)
+        else:
+            logger.info("Quota collector disabled (interval=0)")
 
         # Security metrics collection
         if self.config.f5xc_security_interval > 0:
@@ -210,6 +212,8 @@ class MetricsServer:
             security_thread.start()
             self.collection_threads["security"] = security_thread
             logger.info("Started security metrics collection", interval=self.config.f5xc_security_interval)
+        else:
+            logger.info("Security collector disabled (interval=0)")
 
         # Synthetic monitoring metrics collection
         if self.config.f5xc_synthetic_interval > 0:
@@ -221,6 +225,8 @@ class MetricsServer:
             synthetic_thread.start()
             self.collection_threads["synthetic"] = synthetic_thread
             logger.info("Started synthetic monitoring metrics collection", interval=self.config.f5xc_synthetic_interval)
+        else:
+            logger.info("Synthetic monitoring collector disabled (interval=0)")
 
         # Unified Load Balancer metrics collection (HTTP, TCP, UDP)
         lb_interval = min(
@@ -237,6 +243,8 @@ class MetricsServer:
             lb_thread.start()
             self.collection_threads["lb"] = lb_thread
             logger.info("Started unified LB metrics collection (HTTP, TCP, UDP)", interval=lb_interval)
+        else:
+            logger.info("Load balancer collector disabled (interval=0)")
 
         # DNS metrics collection
         if self.config.f5xc_dns_interval > 0:
@@ -248,6 +256,8 @@ class MetricsServer:
             dns_thread.start()
             self.collection_threads["dns"] = dns_thread
             logger.info("Started DNS metrics collection", interval=self.config.f5xc_dns_interval)
+        else:
+            logger.info("DNS collector disabled (interval=0)")
 
     def _start_http_server(self) -> None:
         """Start HTTP server for metrics endpoint."""

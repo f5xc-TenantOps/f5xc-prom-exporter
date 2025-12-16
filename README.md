@@ -74,6 +74,31 @@ See the `config/` directory for Kubernetes deployment examples.
 | `F5XC_HTTP_PORT` | No | 8080 | Port for metrics HTTP server |
 | `F5XC_LOG_LEVEL` | No | INFO | Logging level |
 
+### Disabling Collectors
+
+To disable a specific collector, set its interval environment variable to `0`:
+
+```bash
+# Disable quota collection
+export F5XC_QUOTA_INTERVAL=0
+
+# Disable security collection
+export F5XC_SECURITY_INTERVAL=0
+
+# Disable DNS collection
+export F5XC_DNS_INTERVAL=0
+
+# Disable synthetic monitoring
+export F5XC_SYNTHETIC_INTERVAL=0
+
+# Disable load balancer collection (requires all three to be 0)
+export F5XC_HTTP_LB_INTERVAL=0
+export F5XC_TCP_LB_INTERVAL=0
+export F5XC_UDP_LB_INTERVAL=0
+```
+
+When a collector is disabled, the exporter logs a message indicating which collector was disabled.
+
 ## Prometheus Configuration
 
 Add this job to your `prometheus.yml`:
