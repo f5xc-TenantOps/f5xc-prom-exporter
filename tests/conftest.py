@@ -54,6 +54,11 @@ def mock_client(test_config):
         client.get_app_firewall_metrics_for_namespace = Mock()
         client.get_security_event_counts_for_namespace = Mock()
 
+        # DNS collector methods (3 calls to system namespace)
+        client.get_dns_zone_metrics = Mock()
+        client.get_dns_lb_health_status = Mock()
+        client.get_dns_lb_pool_member_health = Mock()
+
         yield client
 
 
@@ -638,3 +643,76 @@ def clean_env():
                 pass
     except Exception:
         pass
+
+
+@pytest.fixture
+def sample_dns_zone_metrics_response():
+    """Sample DNS zone metrics response from /api/data/namespaces/system/dns_zones/metrics.
+
+    Based on actual HAR file analysis from F5XC tenant.
+    """
+    return {
+        "data": [
+            {
+                "labels": {"DNS_ZONE_NAME": "example.com"},
+                "value": [{"timestamp": 1765850829, "value": "21833"}]
+            },
+            {
+                "labels": {"DNS_ZONE_NAME": "mysite.net"},
+                "value": [{"timestamp": 1765850829, "value": "15093"}]
+            },
+            {
+                "labels": {"DNS_ZONE_NAME": "test.org"},
+                "value": [{"timestamp": 1765850829, "value": "1049"}]
+            }
+        ],
+        "step": "1440m",
+        "total_hits": "3"
+    }
+
+
+@pytest.fixture
+def sample_dns_lb_health_response():
+    """Sample DNS LB health status response from /api/data/namespaces/system/dns_load_balancers/health_status."""
+    return {
+        "items": [
+            {
+                "name": "global-dns-lb",
+                "namespace": "system",
+                "health_status": "HEALTHY"
+            },
+            {
+                "name": "regional-dns-lb",
+                "namespace": "system",
+                "health_status": "UNHEALTHY"
+            }
+        ],
+        "dns_lb_pools_status_summary": []
+    }
+
+
+@pytest.fixture
+def sample_dns_lb_pool_member_health_response():
+    """Sample DNS LB pool member health response from pool_members_health_status endpoint."""
+    return {
+        "items": [
+            {
+                "dns_lb_name": "global-dns-lb",
+                "pool_name": "primary-pool",
+                "member_address": "10.0.0.1",
+                "health_status": "HEALTHY"
+            },
+            {
+                "dns_lb_name": "global-dns-lb",
+                "pool_name": "primary-pool",
+                "member_address": "10.0.0.2",
+                "health_status": "HEALTHY"
+            },
+            {
+                "dns_lb_name": "regional-dns-lb",
+                "pool_name": "backup-pool",
+                "member_address": "10.1.0.1",
+                "health_status": "UNHEALTHY"
+            }
+        ]
+    }

@@ -9,6 +9,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_l
 
 from .client import F5XCClient
 from .collectors import (
+    DNSCollector,
     LoadBalancerCollector,
     QuotaCollector,
     SecurityCollector,
@@ -85,6 +86,7 @@ class MetricsServer:
         self.security_collector = SecurityCollector(self.client, tenant)
         self.synthetic_monitoring_collector = SyntheticMonitoringCollector(self.client, tenant)
         self.lb_collector = LoadBalancerCollector(self.client, tenant)
+        self.dns_collector = DNSCollector(self.client, tenant)
 
         # Register individual metrics with Prometheus registry
         # Quota metrics
@@ -158,6 +160,16 @@ class MetricsServer:
         self.registry.register(self.lb_collector.tcp_lb_count)
         self.registry.register(self.lb_collector.udp_lb_count)
 
+        # DNS metrics
+        self.registry.register(self.dns_collector.zone_query_count)
+        self.registry.register(self.dns_collector.dns_lb_health)
+        self.registry.register(self.dns_collector.dns_lb_pool_member_health)
+        # DNS collection status
+        self.registry.register(self.dns_collector.collection_success)
+        self.registry.register(self.dns_collector.collection_duration)
+        self.registry.register(self.dns_collector.zone_count)
+        self.registry.register(self.dns_collector.dns_lb_count)
+
         # Collection threads
         self.collection_threads: dict[str, threading.Thread] = {}
         self.stop_event = threading.Event()
@@ -225,6 +237,17 @@ class MetricsServer:
             lb_thread.start()
             self.collection_threads["lb"] = lb_thread
             logger.info("Started unified LB metrics collection (HTTP, TCP, UDP)", interval=lb_interval)
+
+        # DNS metrics collection
+        if self.config.f5xc_dns_interval > 0:
+            dns_thread = threading.Thread(
+                target=self._collect_dns_metrics,
+                name="dns-collector",
+                daemon=True
+            )
+            dns_thread.start()
+            self.collection_threads["dns"] = dns_thread
+            logger.info("Started DNS metrics collection", interval=self.config.f5xc_dns_interval)
 
     def _start_http_server(self) -> None:
         """Start HTTP server for metrics endpoint."""
@@ -309,6 +332,22 @@ class MetricsServer:
             if self.stop_event.wait(lb_interval):
                 break
 
+    def _collect_dns_metrics(self) -> None:
+        """Collect DNS metrics periodically."""
+        while not self.stop_event.is_set():
+            try:
+                self.dns_collector.collect_metrics()
+            except Exception as e:
+                logger.error(
+                    "Error in DNS metrics collection",
+                    error=str(e),
+                    exc_info=True,
+                )
+
+            # Wait for next collection interval
+            if self.stop_event.wait(self.config.f5xc_dns_interval):
+                break
+
     def stop(self) -> None:
         """Stop the metrics server and collection threads."""
         logger.info("Stopping F5XC Prometheus exporter")
@@ -345,6 +384,7 @@ class MetricsServer:
                 "security_interval": self.config.f5xc_security_interval,
                 "synthetic_interval": self.config.f5xc_synthetic_interval,
                 "lb_interval": lb_interval,
+                "dns_interval": self.config.f5xc_dns_interval,
             },
             "threads": {
                 name: thread.is_alive()
