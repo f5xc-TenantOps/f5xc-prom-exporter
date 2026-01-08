@@ -220,3 +220,7 @@ CLAUDE.md
 .claude/
 docs/
 f5-distributed-cloud-oas/
+.beads/
+.gitattributes
+AGENTS.md
+CLAUDE.local.md
