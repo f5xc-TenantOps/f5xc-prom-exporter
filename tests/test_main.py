@@ -10,9 +10,9 @@ from f5xc_exporter import main
 class TestMain:
     """Test main module."""
 
-    @patch('f5xc_exporter.main.get_config')
-    @patch('f5xc_exporter.main.MetricsServer')
-    @patch('f5xc_exporter.main.setup_logging')
+    @patch("f5xc_exporter.main.get_config")
+    @patch("f5xc_exporter.main.MetricsServer")
+    @patch("f5xc_exporter.main.setup_logging")
     def test_main_success(self, mock_setup_logging, mock_metrics_server, mock_get_config):
         """Test successful main execution."""
         # Mock configuration
@@ -36,7 +36,7 @@ class TestMain:
         mock_metrics_server.assert_called_once_with(mock_config)
         mock_server.start.assert_called_once()
 
-    @patch('f5xc_exporter.main.get_config')
+    @patch("f5xc_exporter.main.get_config")
     def test_main_config_error(self, mock_get_config):
         """Test main with configuration error."""
         mock_get_config.side_effect = Exception("Config error")
@@ -47,9 +47,9 @@ class TestMain:
         # Should exit with code 1 on config error
         assert exc_info.value.code == 1
 
-    @patch('f5xc_exporter.main.get_config')
-    @patch('f5xc_exporter.main.MetricsServer')
-    @patch('f5xc_exporter.main.setup_logging')
+    @patch("f5xc_exporter.main.get_config")
+    @patch("f5xc_exporter.main.MetricsServer")
+    @patch("f5xc_exporter.main.setup_logging")
     def test_main_server_start_error(self, mock_setup_logging, mock_metrics_server, mock_get_config):
         """Test main with server start error."""
         # Mock configuration
@@ -69,7 +69,7 @@ class TestMain:
 
         assert exc_info.value.code == 1
 
-    @patch('f5xc_exporter.main.structlog')
+    @patch("f5xc_exporter.main.structlog")
     def test_setup_logging(self, mock_structlog):
         """Test logging setup."""
         main.setup_logging("DEBUG")
@@ -78,10 +78,10 @@ class TestMain:
 
         # Check that configure was called with processors
         call_args = mock_structlog.configure.call_args
-        assert 'processors' in call_args.kwargs
-        assert len(call_args.kwargs['processors']) > 0
+        assert "processors" in call_args.kwargs
+        assert len(call_args.kwargs["processors"]) > 0
 
-    @patch('f5xc_exporter.main.logging')
+    @patch("f5xc_exporter.main.logging")
     def test_setup_logging_level(self, mock_logging):
         """Test logging level setup."""
         main.setup_logging("WARNING")
@@ -91,12 +91,12 @@ class TestMain:
 
         # Check that log level was set correctly
         call_args = mock_logging.basicConfig.call_args
-        assert call_args.kwargs['level'] == mock_logging.WARNING
+        assert call_args.kwargs["level"] == mock_logging.WARNING
 
-    @patch('f5xc_exporter.main.get_config')
-    @patch('f5xc_exporter.main.MetricsServer')
-    @patch('f5xc_exporter.main.setup_logging')
-    @patch('f5xc_exporter.main.signal')
+    @patch("f5xc_exporter.main.get_config")
+    @patch("f5xc_exporter.main.MetricsServer")
+    @patch("f5xc_exporter.main.setup_logging")
+    @patch("f5xc_exporter.main.signal")
     def test_signal_handlers(self, mock_signal, mock_setup_logging, mock_metrics_server, mock_get_config):
         """Test signal handler setup."""
         # Mock configuration
@@ -123,10 +123,10 @@ class TestMain:
         assert mock_signal.SIGINT in signals_set
         assert mock_signal.SIGTERM in signals_set
 
-    @patch('f5xc_exporter.main.get_config')
-    @patch('f5xc_exporter.main.MetricsServer')
-    @patch('f5xc_exporter.main.setup_logging')
-    @patch('f5xc_exporter.main.structlog')
+    @patch("f5xc_exporter.main.get_config")
+    @patch("f5xc_exporter.main.MetricsServer")
+    @patch("f5xc_exporter.main.setup_logging")
+    @patch("f5xc_exporter.main.structlog")
     def test_signal_handler_function(self, mock_structlog, mock_setup_logging, mock_metrics_server, mock_get_config):
         """Test signal handler function behavior."""
         # Mock logger
@@ -145,7 +145,7 @@ class TestMain:
         mock_metrics_server.return_value = mock_server
 
         # Capture the signal handler function
-        with patch('f5xc_exporter.main.signal') as mock_signal:
+        with patch("f5xc_exporter.main.signal") as mock_signal:
             try:
                 main.main()
             except:
@@ -173,7 +173,7 @@ class TestMain:
         # This is a basic test to ensure the main function exists
         assert callable(main.main)
 
-    @patch('f5xc_exporter.main.main')
+    @patch("f5xc_exporter.main.main")
     def test_name_main_guard(self, mock_main):
         """Test __name__ == '__main__' guard."""
         # This test verifies the structure but doesn't execute the guard
@@ -181,5 +181,5 @@ class TestMain:
         # in a test environment.
 
         # Just verify main function exists and is callable
-        assert hasattr(main, 'main')
+        assert hasattr(main, "main")
         assert callable(main.main)
