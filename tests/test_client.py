@@ -1,8 +1,7 @@
 """Tests for F5XC API client."""
 
 import json
-import time
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 import responses
@@ -537,59 +536,71 @@ class TestCircuitBreaker:
         cb = CircuitBreaker(failure_threshold=2, timeout_seconds=1, success_threshold=2)
         endpoint = "/api/test"
 
-        # Open the circuit
-        cb.record_failure(endpoint)
-        cb.record_failure(endpoint)
-        assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
 
-        # Wait for timeout
-        time.sleep(1.1)
+            # Open the circuit
+            cb.record_failure(endpoint)
+            cb.record_failure(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
 
-        # Should transition to HALF_OPEN and allow call
-        assert cb.is_call_allowed(endpoint)
-        assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+            # Advance time past timeout (1.1 seconds)
+            mock_time.return_value = 1.1
+
+            # Should transition to HALF_OPEN and allow call
+            assert cb.is_call_allowed(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
 
     def test_half_open_closes_after_success_threshold(self):
         """Test circuit closes after success threshold in HALF_OPEN."""
         cb = CircuitBreaker(failure_threshold=2, timeout_seconds=1, success_threshold=2)
         endpoint = "/api/test"
 
-        # Open the circuit
-        cb.record_failure(endpoint)
-        cb.record_failure(endpoint)
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
 
-        # Wait and transition to HALF_OPEN
-        time.sleep(1.1)
-        assert cb.is_call_allowed(endpoint)
-        assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+            # Open the circuit
+            cb.record_failure(endpoint)
+            cb.record_failure(endpoint)
 
-        # First success - should stay HALF_OPEN
-        cb.record_success(endpoint)
-        assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+            # Advance time past timeout and transition to HALF_OPEN
+            mock_time.return_value = 1.1
+            assert cb.is_call_allowed(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
 
-        # Second success - should close circuit
-        cb.record_success(endpoint)
-        assert cb.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
-        assert cb.get_failure_count(endpoint) == 0
+            # First success - should stay HALF_OPEN
+            cb.record_success(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+            # Second success - should close circuit
+            cb.record_success(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
+            assert cb.get_failure_count(endpoint) == 0
 
     def test_half_open_reopens_on_failure(self):
         """Test circuit reopens on failure in HALF_OPEN state."""
         cb = CircuitBreaker(failure_threshold=2, timeout_seconds=1, success_threshold=2)
         endpoint = "/api/test"
 
-        # Open the circuit
-        cb.record_failure(endpoint)
-        cb.record_failure(endpoint)
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
 
-        # Wait and transition to HALF_OPEN
-        time.sleep(1.1)
-        assert cb.is_call_allowed(endpoint)
-        assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+            # Open the circuit
+            cb.record_failure(endpoint)
+            cb.record_failure(endpoint)
 
-        # Failure in HALF_OPEN - should reopen
-        cb.record_failure(endpoint)
-        assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
-        assert not cb.is_call_allowed(endpoint)
+            # Advance time past timeout and transition to HALF_OPEN
+            mock_time.return_value = 1.1
+            assert cb.is_call_allowed(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+            # Failure in HALF_OPEN - should reopen
+            cb.record_failure(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+            assert not cb.is_call_allowed(endpoint)
 
     def test_success_resets_failure_count_in_closed_state(self):
         """Test success resets failure count in CLOSED state."""
@@ -635,6 +646,110 @@ class TestCircuitBreaker:
         assert "/api/test1" in endpoints
         assert "/api/test2" in endpoints
         assert "/api/test3" in endpoints
+
+    def test_cleanup_stale_endpoints(self):
+        """Test cleanup of stale endpoints."""
+        cb = CircuitBreaker(
+            failure_threshold=3,
+            timeout_seconds=60,
+            success_threshold=2,
+            endpoint_ttl_hours=1  # 1 hour TTL for testing
+        )
+
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
+
+            # Record some endpoint activity
+            cb.record_failure("/api/active")
+            cb.record_failure("/api/stale1")
+            cb.record_failure("/api/stale2")
+
+            # Verify all endpoints are tracked
+            endpoints = cb.get_all_endpoints()
+            assert len(endpoints) == 3
+            assert "/api/active" in endpoints
+            assert "/api/stale1" in endpoints
+            assert "/api/stale2" in endpoints
+
+            # Advance time 30 minutes and touch active endpoint
+            mock_time.return_value = 1800.0  # 30 minutes
+            cb.is_call_allowed("/api/active")
+
+            # Advance time to just under 1 hour from last active access (55 minutes later)
+            mock_time.return_value = 5100.0  # 1 hour 25 minutes from start, 55 mins from active touch
+
+            # Cleanup should remove only the two stale endpoints (not touched since t=0)
+            cleaned = cb.cleanup_stale_endpoints()
+
+            # Should have cleaned up 2 stale endpoints (last touched at t=0, now past 1 hour TTL)
+            assert cleaned == 2
+
+            # Only active endpoint should remain (last touched at t=1800, only 55 mins ago)
+            endpoints = cb.get_all_endpoints()
+            assert len(endpoints) == 1
+            assert "/api/active" in endpoints
+            assert "/api/stale1" not in endpoints
+            assert "/api/stale2" not in endpoints
+
+    def test_cleanup_no_stale_endpoints(self):
+        """Test cleanup when no endpoints are stale."""
+        cb = CircuitBreaker(
+            failure_threshold=3,
+            timeout_seconds=60,
+            success_threshold=2,
+            endpoint_ttl_hours=24
+        )
+
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
+
+            cb.record_failure("/api/test1")
+            cb.record_failure("/api/test2")
+
+            # Advance time 1 hour (less than 24 hour TTL)
+            mock_time.return_value = 3600.0
+
+            # Cleanup should not remove anything
+            cleaned = cb.cleanup_stale_endpoints()
+            assert cleaned == 0
+
+            # All endpoints should still be tracked
+            endpoints = cb.get_all_endpoints()
+            assert len(endpoints) == 2
+
+    def test_endpoint_access_updates_timestamp(self):
+        """Test that accessing endpoints updates their timestamp."""
+        cb = CircuitBreaker(
+            failure_threshold=3,
+            timeout_seconds=60,
+            success_threshold=2,
+            endpoint_ttl_hours=1
+        )
+
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
+
+            endpoint = "/api/test"
+            cb.record_failure(endpoint)
+
+            # Advance time 30 minutes
+            mock_time.return_value = 1800.0
+
+            # Access endpoint to update timestamp
+            cb.is_call_allowed(endpoint)
+
+            # Advance time 50 minutes from last access (less than 1 hour TTL)
+            mock_time.return_value = 4800.0  # 1 hour 20 mins from start, 50 mins from last access
+
+            # Endpoint should NOT be cleaned up (last access was only 50 mins ago)
+            cleaned = cb.cleanup_stale_endpoints()
+            assert cleaned == 0
+
+            endpoints = cb.get_all_endpoints()
+            assert endpoint in endpoints
 
 
 class TestCircuitBreakerIntegration:

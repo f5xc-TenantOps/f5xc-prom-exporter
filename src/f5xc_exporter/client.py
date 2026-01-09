@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 
 import requests
 import structlog
-from prometheus_client import Gauge
+from prometheus_client import Counter, Gauge
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -38,7 +38,8 @@ class CircuitBreaker:
         self,
         failure_threshold: int = 5,
         timeout_seconds: int = 60,
-        success_threshold: int = 2
+        success_threshold: int = 2,
+        endpoint_ttl_hours: int = 24
     ):
         """Initialize circuit breaker.
 
@@ -46,16 +47,19 @@ class CircuitBreaker:
             failure_threshold: Number of consecutive failures before opening circuit
             timeout_seconds: Seconds to wait before attempting recovery
             success_threshold: Number of successes in HALF_OPEN before closing circuit
+            endpoint_ttl_hours: Hours of inactivity before endpoint is cleaned up (default: 24)
         """
         self.failure_threshold = failure_threshold
         self.timeout_seconds = timeout_seconds
         self.success_threshold = success_threshold
+        self.endpoint_ttl_hours = endpoint_ttl_hours
 
         # Track state per endpoint
         self._states: dict[str, CircuitBreakerState] = {}
         self._failure_counts: dict[str, int] = {}
         self._success_counts: dict[str, int] = {}
         self._last_failure_times: dict[str, float] = {}
+        self._last_access_times: dict[str, float] = {}
 
         # Thread safety lock
         self._lock = threading.Lock()
@@ -77,6 +81,10 @@ class CircuitBreaker:
                 new_state=state.name
             )
 
+    def _touch_endpoint(self, endpoint: str) -> None:
+        """Update last access time for endpoint."""
+        self._last_access_times[endpoint] = time.time()
+
     def is_call_allowed(self, endpoint: str) -> bool:
         """Check if call is allowed for endpoint.
 
@@ -87,6 +95,7 @@ class CircuitBreaker:
             True if call should proceed, False if circuit is open
         """
         with self._lock:
+            self._touch_endpoint(endpoint)
             state = self._get_state(endpoint)
 
             if state == CircuitBreakerState.CLOSED:
@@ -126,6 +135,7 @@ class CircuitBreaker:
         Thread-safe: Uses internal lock to prevent race conditions.
         """
         with self._lock:
+            self._touch_endpoint(endpoint)
             state = self._get_state(endpoint)
 
             if state == CircuitBreakerState.HALF_OPEN:
@@ -155,6 +165,7 @@ class CircuitBreaker:
         Thread-safe: Uses internal lock to prevent race conditions.
         """
         with self._lock:
+            self._touch_endpoint(endpoint)
             state = self._get_state(endpoint)
 
             # Increment failure count
@@ -207,7 +218,44 @@ class CircuitBreaker:
             all_endpoints.update(self._failure_counts.keys())
             all_endpoints.update(self._success_counts.keys())
             all_endpoints.update(self._last_failure_times.keys())
+            all_endpoints.update(self._last_access_times.keys())
             return list(all_endpoints)
+
+    def cleanup_stale_endpoints(self) -> int:
+        """Remove endpoints that haven't been accessed within TTL period.
+
+        Thread-safe: Uses internal lock to prevent race conditions.
+
+        Returns:
+            Number of endpoints cleaned up
+        """
+        with self._lock:
+            now = time.time()
+            ttl_seconds = self.endpoint_ttl_hours * 3600
+            stale_endpoints = []
+
+            # Find endpoints that haven't been accessed within TTL
+            for endpoint, last_access in self._last_access_times.items():
+                if now - last_access >= ttl_seconds:
+                    stale_endpoints.append(endpoint)
+
+            # Remove stale endpoints from all tracking dictionaries
+            for endpoint in stale_endpoints:
+                self._states.pop(endpoint, None)
+                self._failure_counts.pop(endpoint, None)
+                self._success_counts.pop(endpoint, None)
+                self._last_failure_times.pop(endpoint, None)
+                self._last_access_times.pop(endpoint, None)
+
+            if stale_endpoints:
+                logger.info(
+                    "Cleaned up stale circuit breaker endpoints",
+                    count=len(stale_endpoints),
+                    ttl_hours=self.endpoint_ttl_hours,
+                    endpoints=stale_endpoints
+                )
+
+            return len(stale_endpoints)
 
 
 class F5XCAPIError(Exception):
@@ -267,7 +315,8 @@ class F5XCClient:
         self.circuit_breaker = CircuitBreaker(
             failure_threshold=config.f5xc_circuit_breaker_failure_threshold,
             timeout_seconds=config.f5xc_circuit_breaker_timeout,
-            success_threshold=config.f5xc_circuit_breaker_success_threshold
+            success_threshold=config.f5xc_circuit_breaker_success_threshold,
+            endpoint_ttl_hours=config.f5xc_circuit_breaker_endpoint_ttl_hours
         )
 
         # Circuit breaker metrics
@@ -280,6 +329,10 @@ class F5XCClient:
             'f5xc_circuit_breaker_failures',
             'Circuit breaker failure count',
             ['endpoint']
+        )
+        self.circuit_breaker_endpoints_cleaned_metric = Counter(
+            'f5xc_circuit_breaker_endpoints_cleaned_total',
+            'Total number of circuit breaker endpoints cleaned up'
         )
 
     def _update_circuit_breaker_metrics(self, endpoint: str) -> None:

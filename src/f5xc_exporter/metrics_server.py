@@ -272,6 +272,7 @@ class MetricsServer:
         # Circuit breaker metrics
         self.registry.register(self.client.circuit_breaker_state_metric)
         self.registry.register(self.client.circuit_breaker_failures_metric)
+        self.registry.register(self.client.circuit_breaker_endpoints_cleaned_metric)
 
         # Cardinality tracker metrics
         self.registry.register(self.cardinality_tracker.metric_cardinality)
@@ -363,6 +364,20 @@ class MetricsServer:
             logger.info("Started DNS metrics collection", interval=self.config.f5xc_dns_interval)
         else:
             logger.info("DNS collector disabled (interval=0)")
+
+        # Circuit breaker endpoint cleanup
+        if self.config.f5xc_circuit_breaker_cleanup_interval > 0:
+            cleanup_thread = threading.Thread(
+                target=self._cleanup_circuit_breaker_endpoints, name="cb-cleanup", daemon=True
+            )
+            cleanup_thread.start()
+            self.collection_threads["cb_cleanup"] = cleanup_thread
+            logger.info(
+                "Started circuit breaker endpoint cleanup",
+                interval=self.config.f5xc_circuit_breaker_cleanup_interval,
+            )
+        else:
+            logger.info("Circuit breaker cleanup disabled (interval=0)")
 
     def _start_http_server(self) -> None:
         """Start HTTP server for metrics endpoint."""
@@ -460,6 +475,25 @@ class MetricsServer:
 
             # Wait for next collection interval
             if self.stop_event.wait(self.config.f5xc_dns_interval):
+                break
+
+    def _cleanup_circuit_breaker_endpoints(self) -> None:
+        """Clean up stale circuit breaker endpoints periodically."""
+        while not self.stop_event.is_set():
+            try:
+                cleaned = self.client.circuit_breaker.cleanup_stale_endpoints()
+                if cleaned > 0:
+                    self.client.circuit_breaker_endpoints_cleaned_metric.inc(cleaned)
+                    logger.info("Circuit breaker endpoint cleanup completed", endpoints_cleaned=cleaned)
+            except Exception as e:
+                logger.error(
+                    "Error in circuit breaker endpoint cleanup",
+                    error=str(e),
+                    exc_info=True,
+                )
+
+            # Wait for next cleanup interval
+            if self.stop_event.wait(self.config.f5xc_circuit_breaker_cleanup_interval):
                 break
 
     def _check_readiness(self) -> None:
