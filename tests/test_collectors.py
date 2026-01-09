@@ -90,16 +90,13 @@ class TestQuotaCollector:
             "quota_usage": {
                 "container_registry": {
                     "limit": {"maximum": 25},
-                    "usage": {"current": -1}  # -1 means no data
+                    "usage": {"current": -1},  # -1 means no data
                 },
-                "normal_resource": {
-                    "limit": {"maximum": 100},
-                    "usage": {"current": 50}
-                },
+                "normal_resource": {"limit": {"maximum": 100}, "usage": {"current": 50}},
                 "unlimited_resource": {
                     "limit": {"maximum": -1},  # -1 means unlimited
-                    "usage": {"current": 10}
-                }
+                    "usage": {"current": 10},
+                },
             }
         }
         mock_client.get_quota_usage.return_value = response_with_negative
@@ -151,10 +148,7 @@ class TestSecurityCollector:
         assert collector.collection_duration is not None
 
     def test_security_metrics_collection_success(
-        self,
-        mock_client,
-        sample_app_firewall_metrics_response,
-        sample_security_events_aggregation_response
+        self, mock_client, sample_app_firewall_metrics_response, sample_security_events_aggregation_response
     ):
         """Test successful security metrics collection.
 
@@ -175,44 +169,30 @@ class TestSecurityCollector:
         mock_client.get_app_firewall_metrics_for_namespace.assert_called_once_with("demo-shop")
         mock_client.get_security_event_counts_for_namespace.assert_called_once()
 
-    def test_app_firewall_metrics_processing(
-        self,
-        mock_client,
-        sample_app_firewall_metrics_response
-    ):
+    def test_app_firewall_metrics_processing(self, mock_client, sample_app_firewall_metrics_response):
         """Test app firewall metrics processing."""
         collector = SecurityCollector(mock_client, TEST_TENANT)
         collector._process_app_firewall_response(sample_app_firewall_metrics_response, "demo-shop")
 
         # Check total requests
         total_requests = collector.total_requests.labels(
-            tenant=TEST_TENANT,
-            namespace="demo-shop",
-            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+            tenant=TEST_TENANT, namespace="demo-shop", load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
         )
         assert total_requests._value._value == 13442.0
 
         # Check attacked requests
         attacked_requests = collector.attacked_requests.labels(
-            tenant=TEST_TENANT,
-            namespace="demo-shop",
-            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+            tenant=TEST_TENANT, namespace="demo-shop", load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
         )
         assert attacked_requests._value._value == 25.0
 
         # Check bot detections
         bot_detections = collector.bot_detections.labels(
-            tenant=TEST_TENANT,
-            namespace="demo-shop",
-            load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
+            tenant=TEST_TENANT, namespace="demo-shop", load_balancer="ves-io-http-loadbalancer-demo-shop-fe"
         )
         assert bot_detections._value._value == 18.0
 
-    def test_security_events_aggregation_processing(
-        self,
-        mock_client,
-        sample_security_events_aggregation_response
-    ):
+    def test_security_events_aggregation_processing(self, mock_client, sample_security_events_aggregation_response):
         """Test security events aggregation processing.
 
         All event types are collected in a single API call.
@@ -294,16 +274,13 @@ class TestSyntheticMonitoringCollector:
         assert collector.collection_duration is not None
 
     def test_synthetic_metrics_collection(
-        self,
-        mock_client,
-        sample_synthetic_http_summary_response,
-        sample_synthetic_dns_summary_response
+        self, mock_client, sample_synthetic_http_summary_response, sample_synthetic_dns_summary_response
     ):
         """Test synthetic monitoring metrics collection with 2-call approach."""
         mock_client.list_namespaces.return_value = ["demo-shop"]
         mock_client.get_synthetic_summary.side_effect = [
             sample_synthetic_http_summary_response,  # HTTP call
-            sample_synthetic_dns_summary_response,   # DNS call
+            sample_synthetic_dns_summary_response,  # DNS call
         ]
 
         collector = SyntheticMonitoringCollector(mock_client, TEST_TENANT)
@@ -317,11 +294,7 @@ class TestSyntheticMonitoringCollector:
         # Check collection success metric
         assert collector.collection_success.labels(tenant=TEST_TENANT)._value._value == 1
 
-    def test_synthetic_http_summary_processing(
-        self,
-        mock_client,
-        sample_synthetic_http_summary_response
-    ):
+    def test_synthetic_http_summary_processing(self, mock_client, sample_synthetic_http_summary_response):
         """Test HTTP monitor summary data processing."""
         mock_client.list_namespaces.return_value = ["demo-shop"]
         mock_client.get_synthetic_summary.return_value = sample_synthetic_http_summary_response
@@ -339,11 +312,7 @@ class TestSyntheticMonitoringCollector:
         http_critical = collector.http_monitors_critical.labels(tenant=TEST_TENANT, namespace="demo-shop")
         assert http_critical._value._value == 0
 
-    def test_synthetic_dns_summary_processing(
-        self,
-        mock_client,
-        sample_synthetic_dns_summary_response
-    ):
+    def test_synthetic_dns_summary_processing(self, mock_client, sample_synthetic_dns_summary_response):
         """Test DNS monitor summary data processing."""
         mock_client.list_namespaces.return_value = ["demo-shop"]
         # HTTP returns empty, DNS returns data
@@ -392,6 +361,24 @@ class TestLoadBalancerCollector:
         # UDP metrics
         assert collector.udp_request_throughput is not None
         assert collector.udp_response_throughput is not None
+        # HTTP healthscore metrics
+        assert collector.http_healthscore_overall is not None
+        assert collector.http_healthscore_connectivity is not None
+        assert collector.http_healthscore_performance is not None
+        assert collector.http_healthscore_security is not None
+        assert collector.http_healthscore_reliability is not None
+        # TCP healthscore metrics
+        assert collector.tcp_healthscore_overall is not None
+        assert collector.tcp_healthscore_connectivity is not None
+        assert collector.tcp_healthscore_performance is not None
+        assert collector.tcp_healthscore_security is not None
+        assert collector.tcp_healthscore_reliability is not None
+        # UDP healthscore metrics
+        assert collector.udp_healthscore_overall is not None
+        assert collector.udp_healthscore_connectivity is not None
+        assert collector.udp_healthscore_performance is not None
+        assert collector.udp_healthscore_security is not None
+        assert collector.udp_healthscore_reliability is not None
         # Unified collection status
         assert collector.collection_success is not None
         assert collector.collection_duration is not None
@@ -438,108 +425,108 @@ class TestLoadBalancerCollector:
 
         # Check HTTP LB downstream metrics
         http_request_rate_downstream = collector.http_request_rate.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="app-frontend",
-            site="ce-site-1",
-            direction="downstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="downstream"
         )
         assert http_request_rate_downstream._value._value == 150.5
 
         http_error_rate_downstream = collector.http_error_rate.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="app-frontend",
-            site="ce-site-1",
-            direction="downstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="downstream"
         )
         assert http_error_rate_downstream._value._value == 2.5
 
         http_latency_downstream = collector.http_latency.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="app-frontend",
-            site="ce-site-1",
-            direction="downstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="downstream"
         )
         assert http_latency_downstream._value._value == 0.025
 
         # Check HTTP LB upstream metrics
         http_request_rate_upstream = collector.http_request_rate.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="app-frontend",
-            site="ce-site-1",
-            direction="upstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="upstream"
         )
         assert http_request_rate_upstream._value._value == 120.0
 
         http_latency_upstream = collector.http_latency.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="app-frontend",
-            site="ce-site-1",
-            direction="upstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="upstream"
         )
         assert http_latency_upstream._value._value == 0.050
 
         # Check TCP LB downstream metrics
         tcp_connection_rate_downstream = collector.tcp_connection_rate.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="tcp-backend",
-            site="ce-site-1",
-            direction="downstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="tcp-backend", site="ce-site-1", direction="downstream"
         )
         assert tcp_connection_rate_downstream._value._value == 50.0
 
         tcp_error_rate_downstream = collector.tcp_error_rate.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="tcp-backend",
-            site="ce-site-1",
-            direction="downstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="tcp-backend", site="ce-site-1", direction="downstream"
         )
         assert tcp_error_rate_downstream._value._value == 1.5
 
         # Check TCP LB upstream metrics
         tcp_connection_rate_upstream = collector.tcp_connection_rate.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="tcp-backend",
-            site="ce-site-1",
-            direction="upstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="tcp-backend", site="ce-site-1", direction="upstream"
         )
         assert tcp_connection_rate_upstream._value._value == 45.0
 
         # Check UDP LB downstream metrics
         udp_request_throughput_downstream = collector.udp_request_throughput.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="udp-dns-lb",
-            site="ce-site-1",
-            direction="downstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="udp-dns-lb", site="ce-site-1", direction="downstream"
         )
         assert udp_request_throughput_downstream._value._value == 100000
 
         udp_response_throughput_downstream = collector.udp_response_throughput.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="udp-dns-lb",
-            site="ce-site-1",
-            direction="downstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="udp-dns-lb", site="ce-site-1", direction="downstream"
         )
         assert udp_response_throughput_downstream._value._value == 200000
 
         # Check UDP LB upstream metrics
         udp_request_throughput_upstream = collector.udp_request_throughput.labels(
-            tenant=TEST_TENANT,
-            namespace="prod",
-            load_balancer="udp-dns-lb",
-            site="ce-site-1",
-            direction="upstream"
+            tenant=TEST_TENANT, namespace="prod", load_balancer="udp-dns-lb", site="ce-site-1", direction="upstream"
         )
         assert udp_request_throughput_upstream._value._value == 95000
+
+    def test_lb_healthscore_processing(self, mock_client, sample_unified_lb_response):
+        """Test healthscore data processing for load balancers."""
+        mock_client.get_all_lb_metrics.return_value = sample_unified_lb_response
+
+        collector = LoadBalancerCollector(mock_client, TEST_TENANT)
+        collector.collect_metrics()
+
+        # Check HTTP LB downstream healthscores
+        http_healthscore_overall_downstream = collector.http_healthscore_overall.labels(
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="downstream"
+        )
+        assert http_healthscore_overall_downstream._value._value == 95.0
+
+        http_healthscore_connectivity_downstream = collector.http_healthscore_connectivity.labels(
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="downstream"
+        )
+        assert http_healthscore_connectivity_downstream._value._value == 98.0
+
+        http_healthscore_performance_downstream = collector.http_healthscore_performance.labels(
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="downstream"
+        )
+        assert http_healthscore_performance_downstream._value._value == 92.0
+
+        http_healthscore_security_downstream = collector.http_healthscore_security.labels(
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="downstream"
+        )
+        assert http_healthscore_security_downstream._value._value == 100.0
+
+        http_healthscore_reliability_downstream = collector.http_healthscore_reliability.labels(
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="downstream"
+        )
+        assert http_healthscore_reliability_downstream._value._value == 94.0
+
+        # Check HTTP LB upstream healthscores
+        http_healthscore_overall_upstream = collector.http_healthscore_overall.labels(
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="upstream"
+        )
+        assert http_healthscore_overall_upstream._value._value == 90.0
+
+        http_healthscore_performance_upstream = collector.http_healthscore_performance.labels(
+            tenant=TEST_TENANT, namespace="prod", load_balancer="app-frontend", site="ce-site-1", direction="upstream"
+        )
+        assert http_healthscore_performance_upstream._value._value == 85.0
 
     def test_lb_empty_response(self, mock_client):
         """Test LB collector handles empty response gracefully."""
@@ -564,20 +551,15 @@ class TestLoadBalancerCollector:
                             "namespace": "test",
                             "virtual_host_type": "HTTP_LOAD_BALANCER",
                             # vhost missing - should be skipped
-                            "site": "site-1"
+                            "site": "site-1",
                         },
                         "data": {
                             "metric": {
                                 "downstream": [
-                                    {
-                                        "type": "HTTP_REQUEST_RATE",
-                                        "value": {
-                                            "raw": [{"timestamp": 123, "value": 100}]
-                                        }
-                                    }
+                                    {"type": "HTTP_REQUEST_RATE", "value": {"raw": [{"timestamp": 123, "value": 100}]}}
                                 ]
                             }
-                        }
+                        },
                     }
                 ]
             }
@@ -615,7 +597,7 @@ class TestDNSCollector:
         mock_client,
         sample_dns_zone_metrics_response,
         sample_dns_lb_health_response,
-        sample_dns_lb_pool_member_health_response
+        sample_dns_lb_pool_member_health_response,
     ):
         """Test successful DNS metrics collection (3 API calls)."""
         mock_client.get_dns_zone_metrics.return_value = sample_dns_zone_metrics_response
@@ -637,11 +619,7 @@ class TestDNSCollector:
         assert collector.zone_count.labels(tenant=TEST_TENANT)._value._value == 3
         assert collector.dns_lb_count.labels(tenant=TEST_TENANT)._value._value == 2
 
-    def test_dns_zone_metrics_processing(
-        self,
-        mock_client,
-        sample_dns_zone_metrics_response
-    ):
+    def test_dns_zone_metrics_processing(self, mock_client, sample_dns_zone_metrics_response):
         """Test DNS zone metrics processing."""
         collector = DNSCollector(mock_client, TEST_TENANT)
         zone_count = collector._process_zone_metrics(sample_dns_zone_metrics_response)
@@ -649,31 +627,18 @@ class TestDNSCollector:
         assert zone_count == 3
 
         # Check example.com zone
-        example_zone = collector.zone_query_count.labels(
-            tenant=TEST_TENANT,
-            zone="example.com"
-        )
+        example_zone = collector.zone_query_count.labels(tenant=TEST_TENANT, zone="example.com")
         assert example_zone._value._value == 21833.0
 
         # Check mysite.net zone
-        mysite_zone = collector.zone_query_count.labels(
-            tenant=TEST_TENANT,
-            zone="mysite.net"
-        )
+        mysite_zone = collector.zone_query_count.labels(tenant=TEST_TENANT, zone="mysite.net")
         assert mysite_zone._value._value == 15093.0
 
         # Check test.org zone
-        test_zone = collector.zone_query_count.labels(
-            tenant=TEST_TENANT,
-            zone="test.org"
-        )
+        test_zone = collector.zone_query_count.labels(tenant=TEST_TENANT, zone="test.org")
         assert test_zone._value._value == 1049.0
 
-    def test_dns_lb_health_processing(
-        self,
-        mock_client,
-        sample_dns_lb_health_response
-    ):
+    def test_dns_lb_health_processing(self, mock_client, sample_dns_lb_health_response):
         """Test DNS LB health status processing."""
         collector = DNSCollector(mock_client, TEST_TENANT)
         lb_count = collector._process_lb_health(sample_dns_lb_health_response)
@@ -681,43 +646,27 @@ class TestDNSCollector:
         assert lb_count == 2
 
         # Check healthy LB
-        healthy_lb = collector.dns_lb_health.labels(
-            tenant=TEST_TENANT,
-            dns_lb="global-dns-lb"
-        )
+        healthy_lb = collector.dns_lb_health.labels(tenant=TEST_TENANT, dns_lb="global-dns-lb")
         assert healthy_lb._value._value == 1.0  # HEALTHY
 
         # Check unhealthy LB
-        unhealthy_lb = collector.dns_lb_health.labels(
-            tenant=TEST_TENANT,
-            dns_lb="regional-dns-lb"
-        )
+        unhealthy_lb = collector.dns_lb_health.labels(tenant=TEST_TENANT, dns_lb="regional-dns-lb")
         assert unhealthy_lb._value._value == 0.0  # UNHEALTHY
 
-    def test_dns_lb_pool_member_health_processing(
-        self,
-        mock_client,
-        sample_dns_lb_pool_member_health_response
-    ):
+    def test_dns_lb_pool_member_health_processing(self, mock_client, sample_dns_lb_pool_member_health_response):
         """Test DNS LB pool member health processing."""
         collector = DNSCollector(mock_client, TEST_TENANT)
         collector._process_pool_member_health(sample_dns_lb_pool_member_health_response)
 
         # Check healthy member
         healthy_member = collector.dns_lb_pool_member_health.labels(
-            tenant=TEST_TENANT,
-            dns_lb="global-dns-lb",
-            pool="primary-pool",
-            member="10.0.0.1"
+            tenant=TEST_TENANT, dns_lb="global-dns-lb", pool="primary-pool", member="10.0.0.1"
         )
         assert healthy_member._value._value == 1.0  # HEALTHY
 
         # Check unhealthy member
         unhealthy_member = collector.dns_lb_pool_member_health.labels(
-            tenant=TEST_TENANT,
-            dns_lb="regional-dns-lb",
-            pool="backup-pool",
-            member="10.1.0.1"
+            tenant=TEST_TENANT, dns_lb="regional-dns-lb", pool="backup-pool", member="10.1.0.1"
         )
         assert unhealthy_member._value._value == 0.0  # UNHEALTHY
 
@@ -835,25 +784,25 @@ class TestCollectorIntegration:
         assert len(metrics_output) > 0
 
         # Test that metrics output contains expected metric names
-        metrics_str = metrics_output.decode('utf-8')
-        assert 'f5xc_quota_limit' in metrics_str
-        assert 'f5xc_security_collection_success' in metrics_str
-        assert 'f5xc_synthetic_http_monitors_total' in metrics_str
+        metrics_str = metrics_output.decode("utf-8")
+        assert "f5xc_quota_limit" in metrics_str
+        assert "f5xc_security_collection_success" in metrics_str
+        assert "f5xc_synthetic_http_monitors_total" in metrics_str
         # Unified LB metrics
-        assert 'f5xc_http_lb_request_rate' in metrics_str
-        assert 'f5xc_tcp_lb_connection_rate' in metrics_str
-        assert 'f5xc_udp_lb_request_throughput_bps' in metrics_str
-        assert 'f5xc_lb_collection_success' in metrics_str  # Single unified collection success
+        assert "f5xc_http_lb_request_rate" in metrics_str
+        assert "f5xc_tcp_lb_connection_rate" in metrics_str
+        assert "f5xc_udp_lb_request_throughput_bps" in metrics_str
+        assert "f5xc_lb_collection_success" in metrics_str  # Single unified collection success
         # DNS metrics
-        assert 'f5xc_dns_zone_query_count' in metrics_str
-        assert 'f5xc_dns_lb_health_status' in metrics_str
-        assert 'f5xc_dns_collection_success' in metrics_str
+        assert "f5xc_dns_zone_query_count" in metrics_str
+        assert "f5xc_dns_lb_health_status" in metrics_str
+        assert "f5xc_dns_collection_success" in metrics_str
 
     def test_collector_error_handling(self, mock_client):
         """Test collector error handling doesn't crash."""
         mock_client.get_quota_usage.side_effect = Exception("Network error")
 
-        with patch('prometheus_client.REGISTRY', CollectorRegistry()):
+        with patch("prometheus_client.REGISTRY", CollectorRegistry()):
             collector = QuotaCollector(mock_client, TEST_TENANT)
 
             with pytest.raises(Exception):

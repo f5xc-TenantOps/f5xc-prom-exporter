@@ -5,11 +5,12 @@ All DNS resources are in the system namespace (not namespaced).
 """
 
 import time
-from typing import Any
+from typing import Any, Optional
 
 import structlog
 from prometheus_client import Gauge
 
+from ..cardinality import CardinalityTracker
 from ..client import F5XCAPIError, F5XCClient
 
 logger = structlog.get_logger()
@@ -26,55 +27,47 @@ class DNSCollector:
     Uses 3 API calls per collection cycle.
     """
 
-    def __init__(self, client: F5XCClient, tenant: str):
-        """Initialize DNS collector."""
+    def __init__(
+        self,
+        client: F5XCClient,
+        tenant: str,
+        cardinality_tracker: Optional[CardinalityTracker] = None,
+    ):
+        """Initialize DNS collector.
+
+        Args:
+            client: F5XC API client
+            tenant: Tenant name
+            cardinality_tracker: Optional cardinality tracker for limit enforcement
+        """
         self.client = client
         self.tenant = tenant
+        self.cardinality_tracker = cardinality_tracker
 
         # --- DNS Zone Metrics ---
         zone_labels = ["tenant", "zone"]
-        self.zone_query_count = Gauge(
-            "f5xc_dns_zone_query_count",
-            "Total DNS queries per zone",
-            zone_labels
-        )
+        self.zone_query_count = Gauge("f5xc_dns_zone_query_count", "Total DNS queries per zone", zone_labels)
 
         # --- DNS Load Balancer Health Metrics ---
         lb_labels = ["tenant", "dns_lb"]
         self.dns_lb_health = Gauge(
-            "f5xc_dns_lb_health_status",
-            "DNS Load Balancer health status (1=healthy, 0=unhealthy)",
-            lb_labels
+            "f5xc_dns_lb_health_status", "DNS Load Balancer health status (1=healthy, 0=unhealthy)", lb_labels
         )
 
         pool_labels = ["tenant", "dns_lb", "pool", "member"]
         self.dns_lb_pool_member_health = Gauge(
-            "f5xc_dns_lb_pool_member_health",
-            "DNS LB pool member health status (1=healthy, 0=unhealthy)",
-            pool_labels
+            "f5xc_dns_lb_pool_member_health", "DNS LB pool member health status (1=healthy, 0=unhealthy)", pool_labels
         )
 
         # --- Collection Status Metrics ---
         self.collection_success = Gauge(
-            "f5xc_dns_collection_success",
-            "Whether DNS metrics collection succeeded (1=success, 0=failure)",
-            ["tenant"]
+            "f5xc_dns_collection_success", "Whether DNS metrics collection succeeded (1=success, 0=failure)", ["tenant"]
         )
         self.collection_duration = Gauge(
-            "f5xc_dns_collection_duration_seconds",
-            "Time taken to collect DNS metrics",
-            ["tenant"]
+            "f5xc_dns_collection_duration_seconds", "Time taken to collect DNS metrics", ["tenant"]
         )
-        self.zone_count = Gauge(
-            "f5xc_dns_zone_count",
-            "Number of DNS zones discovered",
-            ["tenant"]
-        )
-        self.dns_lb_count = Gauge(
-            "f5xc_dns_lb_count",
-            "Number of DNS load balancers discovered",
-            ["tenant"]
-        )
+        self.zone_count = Gauge("f5xc_dns_zone_count", "Number of DNS zones discovered", ["tenant"])
+        self.dns_lb_count = Gauge("f5xc_dns_lb_count", "Number of DNS load balancers discovered", ["tenant"])
 
     def collect_metrics(self) -> None:
         """Collect all DNS metrics."""
@@ -109,6 +102,11 @@ class DNSCollector:
                 lb_count=lb_count,
             )
 
+            # Update cardinality tracking if enabled
+            if self.cardinality_tracker:
+                self.cardinality_tracker.update_metric_cardinality("dns", "dns_zone_metrics", zone_count)
+                self.cardinality_tracker.update_metric_cardinality("dns", "dns_lb_metrics", lb_count)
+
         except F5XCAPIError as e:
             logger.error(
                 "Failed to collect DNS metrics",
@@ -128,10 +126,7 @@ class DNSCollector:
             response = self.client.get_dns_zone_metrics(group_by=["DNS_ZONE_NAME"])
             return self._process_zone_metrics(response)
         except F5XCAPIError as e:
-            logger.warning(
-                "Failed to get DNS zone metrics",
-                error=str(e)
-            )
+            logger.warning("Failed to get DNS zone metrics", error=str(e))
             return 0
 
     def _collect_lb_health(self) -> int:
@@ -144,10 +139,7 @@ class DNSCollector:
             response = self.client.get_dns_lb_health_status()
             return self._process_lb_health(response)
         except F5XCAPIError as e:
-            logger.warning(
-                "Failed to get DNS LB health status",
-                error=str(e)
-            )
+            logger.warning("Failed to get DNS LB health status", error=str(e))
             return 0
 
     def _collect_pool_member_health(self) -> None:
@@ -156,10 +148,7 @@ class DNSCollector:
             response = self.client.get_dns_lb_pool_member_health()
             self._process_pool_member_health(response)
         except F5XCAPIError as e:
-            logger.warning(
-                "Failed to get DNS LB pool member health",
-                error=str(e)
-            )
+            logger.warning("Failed to get DNS LB pool member health", error=str(e))
 
     def _process_zone_metrics(self, data: dict[str, Any]) -> int:
         """Process DNS zone metrics response.
@@ -189,6 +178,11 @@ class DNSCollector:
             if zone_name == "unknown":
                 continue
 
+            # Check cardinality limits if tracker is enabled
+            if self.cardinality_tracker:
+                if not self.cardinality_tracker.check_dns_zone_limit(zone_name, "dns"):
+                    continue
+
             # Get the latest value
             values = item.get("value", [])
             if not values:
@@ -199,18 +193,10 @@ class DNSCollector:
 
             try:
                 value = float(value_str)
-                self.zone_query_count.labels(
-                    tenant=self.tenant,
-                    zone=zone_name
-                ).set(value)
+                self.zone_query_count.labels(tenant=self.tenant, zone=zone_name).set(value)
                 zone_count += 1
             except (ValueError, TypeError) as e:
-                logger.warning(
-                    "Failed to parse DNS zone metric value",
-                    zone=zone_name,
-                    value=value_str,
-                    error=str(e)
-                )
+                logger.warning("Failed to parse DNS zone metric value", zone=zone_name, value=value_str, error=str(e))
 
         return zone_count
 
@@ -245,17 +231,10 @@ class DNSCollector:
             # Convert to numeric: HEALTHY=1, anything else=0
             health_value = 1.0 if health_status == "HEALTHY" else 0.0
 
-            self.dns_lb_health.labels(
-                tenant=self.tenant,
-                dns_lb=lb_name
-            ).set(health_value)
+            self.dns_lb_health.labels(tenant=self.tenant, dns_lb=lb_name).set(health_value)
             lb_count += 1
 
-            logger.debug(
-                "DNS LB health status",
-                dns_lb=lb_name,
-                health_status=health_status
-            )
+            logger.debug("DNS LB health status", dns_lb=lb_name, health_status=health_status)
 
         return lb_count
 
@@ -288,17 +267,10 @@ class DNSCollector:
             # Convert to numeric: HEALTHY=1, anything else=0
             health_value = 1.0 if health_status == "HEALTHY" else 0.0
 
-            self.dns_lb_pool_member_health.labels(
-                tenant=self.tenant,
-                dns_lb=dns_lb,
-                pool=pool,
-                member=member
-            ).set(health_value)
+            self.dns_lb_pool_member_health.labels(tenant=self.tenant, dns_lb=dns_lb, pool=pool, member=member).set(
+                health_value
+            )
 
             logger.debug(
-                "DNS LB pool member health",
-                dns_lb=dns_lb,
-                pool=pool,
-                member=member,
-                health_status=health_status
+                "DNS LB pool member health", dns_lb=dns_lb, pool=pool, member=member, health_status=health_status
             )
