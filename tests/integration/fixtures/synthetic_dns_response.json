@@ -1,5 +1,5 @@
 {
-  "critical_monitor_count": 1,
+  "critical_monitor_count": 0,
   "number_of_monitors": 3,
-  "healthy_monitor_count": 2
+  "healthy_monitor_count": 3
 }

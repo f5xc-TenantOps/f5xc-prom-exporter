@@ -135,3 +135,253 @@ def load_fixture():
             return json.load(f)
 
     return _load_fixture
+
+
+@pytest.fixture
+def mock_namespace_list(test_config):
+    """Helper to mock namespace list API.
+
+    Usage:
+        @responses.activate
+        def test_something(mock_namespace_list):
+            mock_namespace_list(["prod", "staging"])
+            # ... rest of test
+
+    Returns:
+        Function that adds namespace list mock to responses.
+    """
+    import responses
+
+    def _mock_namespace_list(namespaces: list[str], status: int = 200):
+        """Add namespace list mock."""
+        responses.add(
+            method="GET",
+            url=f"{test_config.tenant_url_str}/api/web/namespaces",
+            json={"items": [{"name": ns} for ns in namespaces]},
+            status=status,
+        )
+
+    return _mock_namespace_list
+
+
+@pytest.fixture
+def mock_dns_apis(test_config, load_fixture):
+    """Helper to mock all DNS-related APIs with fixtures.
+
+    Usage:
+        @responses.activate
+        def test_something(mock_dns_apis):
+            mock_dns_apis()  # Uses default fixtures
+            # ... rest of test
+
+    Returns:
+        Function that adds all DNS API mocks to responses.
+    """
+    import responses
+
+    def _mock_dns_apis(
+        zone_fixture: str = "dns_zone_metrics_response.json",
+        lb_health_fixture: str = "dns_lb_health_response.json",
+        pool_health_fixture: str = "dns_pool_health_response.json",
+        zone_status: int = 200,
+        lb_health_status: int = 200,
+        pool_health_status: int = 200,
+    ):
+        """Add all DNS API mocks."""
+        zone_data = load_fixture(zone_fixture)
+        responses.add(
+            method="POST",
+            url=f"{test_config.tenant_url_str}/api/data/namespaces/system/dns_zones/metrics",
+            json=zone_data,
+            status=zone_status,
+        )
+
+        lb_health_data = load_fixture(lb_health_fixture)
+        responses.add(
+            method="GET",
+            url=f"{test_config.tenant_url_str}/api/data/namespaces/system/dns_load_balancers/health_status",
+            json=lb_health_data,
+            status=lb_health_status,
+        )
+
+        pool_health_data = load_fixture(pool_health_fixture)
+        responses.add(
+            method="GET",
+            url=f"{test_config.tenant_url_str}/api/data/namespaces/system/dns_load_balancers/pool_members_health_status",
+            json=pool_health_data,
+            status=pool_health_status,
+        )
+
+    return _mock_dns_apis
+
+
+@pytest.fixture
+def mock_loadbalancer_apis(test_config, load_fixture):
+    """Helper to mock load balancer APIs per namespace.
+
+    Usage:
+        @responses.activate
+        def test_something(mock_namespace_list, mock_loadbalancer_apis):
+            mock_namespace_list(["prod"])
+            mock_loadbalancer_apis("prod")
+            # ... rest of test
+
+    Returns:
+        Function that adds load balancer API mocks for a namespace.
+    """
+    import responses
+
+    def _mock_loadbalancer_apis(
+        namespace: str,
+        fixture: str = "loadbalancer_response.json",
+        status: int = 200,
+    ):
+        """Add load balancer API mock for specific namespace."""
+        lb_data = load_fixture(fixture)
+        responses.add(
+            method="POST",
+            url=f"{test_config.tenant_url_str}/api/data/namespaces/{namespace}/graph/service",
+            json=lb_data,
+            status=status,
+        )
+
+    return _mock_loadbalancer_apis
+
+
+@pytest.fixture
+def mock_synthetic_apis(test_config, load_fixture):
+    """Helper to mock synthetic monitoring APIs per namespace.
+
+    Usage:
+        @responses.activate
+        def test_something(mock_namespace_list, mock_synthetic_apis):
+            mock_namespace_list(["test-ns"])
+            mock_synthetic_apis("test-ns")
+            # ... rest of test
+
+    Returns:
+        Function that adds synthetic monitoring API mocks for a namespace.
+    """
+    import responses
+
+    def _mock_synthetic_apis(
+        namespace: str,
+        http_fixture: str = "synthetic_http_response.json",
+        dns_fixture: str = "synthetic_dns_response.json",
+        http_status: int = 200,
+        dns_status: int = 200,
+    ):
+        """Add synthetic monitoring API mocks for specific namespace."""
+        http_data = load_fixture(http_fixture)
+        responses.add(
+            method="GET",
+            url=f"{test_config.tenant_url_str}/api/observability/synthetic_monitor/namespaces/{namespace}/global-summary?monitorType=http",
+            json=http_data,
+            status=http_status,
+        )
+
+        dns_data = load_fixture(dns_fixture)
+        responses.add(
+            method="GET",
+            url=f"{test_config.tenant_url_str}/api/observability/synthetic_monitor/namespaces/{namespace}/global-summary?monitorType=dns",
+            json=dns_data,
+            status=dns_status,
+        )
+
+    return _mock_synthetic_apis
+
+
+@pytest.fixture
+def mock_security_apis(test_config, load_fixture):
+    """Helper to mock security APIs per namespace.
+
+    Usage:
+        @responses.activate
+        def test_something(mock_namespace_list, mock_security_apis):
+            mock_namespace_list(["test-ns"])
+            mock_security_apis("test-ns")
+            # ... rest of test
+
+    Returns:
+        Function that adds security API mocks for a namespace.
+    """
+    import responses
+
+    def _mock_security_apis(
+        namespace: str,
+        app_firewall_fixture: str = "security_app_firewall_response.json",
+        events_fixture: str = "security_events_response.json",
+        app_firewall_status: int = 200,
+        events_status: int = 200,
+    ):
+        """Add security API mocks for specific namespace."""
+        app_firewall_data = load_fixture(app_firewall_fixture)
+        responses.add(
+            method="POST",
+            url=f"{test_config.tenant_url_str}/api/data/namespaces/{namespace}/app_firewall/metrics",
+            json=app_firewall_data,
+            status=app_firewall_status,
+        )
+
+        events_data = load_fixture(events_fixture)
+        responses.add(
+            method="POST",
+            url=f"{test_config.tenant_url_str}/api/data/namespaces/{namespace}/app_security/events/aggregation",
+            json=events_data,
+            status=events_status,
+        )
+
+    return _mock_security_apis
+
+
+@pytest.fixture
+def mock_quota_api(test_config, load_fixture):
+    """Helper to mock quota API.
+
+    Usage:
+        @responses.activate
+        def test_something(mock_quota_api):
+            mock_quota_api()
+            # ... rest of test
+
+    Returns:
+        Function that adds quota API mock to responses.
+    """
+    import responses
+
+    def _mock_quota_api(
+        fixture: str = "quota_response.json",
+        status: int = 200,
+    ):
+        """Add quota API mock."""
+        quota_data = load_fixture(fixture)
+        responses.add(
+            method="GET",
+            url=f"{test_config.tenant_url_str}/api/web/namespaces/system/quota/usage",
+            json=quota_data,
+            status=status,
+        )
+
+    return _mock_quota_api
+
+
+def get_metric_value(metric, **labels):
+    """Helper function to get metric value without accessing internal _value.get().
+
+    This uses the public collect() API to avoid coupling tests to implementation details.
+
+    Usage:
+        value = get_metric_value(collector.quota_limit, tenant="test-tenant", resource="lb")
+
+    Args:
+        metric: Prometheus metric object (Gauge, Counter, etc.)
+        **labels: Label key-value pairs to identify the metric series
+
+    Returns:
+        The metric value, or None if metric not found
+    """
+    for sample in metric.collect():
+        for s in sample.samples:
+            if all(s.labels.get(k) == v for k, v in labels.items()):
+                return s.value
+    return None
