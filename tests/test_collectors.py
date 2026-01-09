@@ -392,6 +392,24 @@ class TestLoadBalancerCollector:
         # UDP metrics
         assert collector.udp_request_throughput is not None
         assert collector.udp_response_throughput is not None
+        # HTTP healthscore metrics
+        assert collector.http_healthscore_overall is not None
+        assert collector.http_healthscore_connectivity is not None
+        assert collector.http_healthscore_performance is not None
+        assert collector.http_healthscore_security is not None
+        assert collector.http_healthscore_reliability is not None
+        # TCP healthscore metrics
+        assert collector.tcp_healthscore_overall is not None
+        assert collector.tcp_healthscore_connectivity is not None
+        assert collector.tcp_healthscore_performance is not None
+        assert collector.tcp_healthscore_security is not None
+        assert collector.tcp_healthscore_reliability is not None
+        # UDP healthscore metrics
+        assert collector.udp_healthscore_overall is not None
+        assert collector.udp_healthscore_connectivity is not None
+        assert collector.udp_healthscore_performance is not None
+        assert collector.udp_healthscore_security is not None
+        assert collector.udp_healthscore_reliability is not None
         # Unified collection status
         assert collector.collection_success is not None
         assert collector.collection_duration is not None
@@ -540,6 +558,78 @@ class TestLoadBalancerCollector:
             direction="upstream"
         )
         assert udp_request_throughput_upstream._value._value == 95000
+
+    def test_lb_healthscore_processing(self, mock_client, sample_unified_lb_response):
+        """Test healthscore data processing for load balancers."""
+        mock_client.get_all_lb_metrics.return_value = sample_unified_lb_response
+
+        collector = LoadBalancerCollector(mock_client, TEST_TENANT)
+        collector.collect_metrics()
+
+        # Check HTTP LB downstream healthscores
+        http_healthscore_overall_downstream = collector.http_healthscore_overall.labels(
+            tenant=TEST_TENANT,
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert http_healthscore_overall_downstream._value._value == 95.0
+
+        http_healthscore_connectivity_downstream = collector.http_healthscore_connectivity.labels(
+            tenant=TEST_TENANT,
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert http_healthscore_connectivity_downstream._value._value == 98.0
+
+        http_healthscore_performance_downstream = collector.http_healthscore_performance.labels(
+            tenant=TEST_TENANT,
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert http_healthscore_performance_downstream._value._value == 92.0
+
+        http_healthscore_security_downstream = collector.http_healthscore_security.labels(
+            tenant=TEST_TENANT,
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert http_healthscore_security_downstream._value._value == 100.0
+
+        http_healthscore_reliability_downstream = collector.http_healthscore_reliability.labels(
+            tenant=TEST_TENANT,
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="downstream"
+        )
+        assert http_healthscore_reliability_downstream._value._value == 94.0
+
+        # Check HTTP LB upstream healthscores
+        http_healthscore_overall_upstream = collector.http_healthscore_overall.labels(
+            tenant=TEST_TENANT,
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert http_healthscore_overall_upstream._value._value == 90.0
+
+        http_healthscore_performance_upstream = collector.http_healthscore_performance.labels(
+            tenant=TEST_TENANT,
+            namespace="prod",
+            load_balancer="app-frontend",
+            site="ce-site-1",
+            direction="upstream"
+        )
+        assert http_healthscore_performance_upstream._value._value == 85.0
 
     def test_lb_empty_response(self, mock_client):
         """Test LB collector handles empty response gracefully."""

@@ -55,6 +55,15 @@ class LoadBalancerCollector:
         "REQUEST_TO_ORIGIN_RATE": "request_to_origin_rate",
     }
 
+    # Healthscore mapping (apply to all LB types)
+    HEALTHSCORE_MAP = {
+        "HEALTHSCORE_OVERALL": "healthscore_overall",
+        "HEALTHSCORE_CONNECTIVITY": "healthscore_connectivity",
+        "HEALTHSCORE_PERFORMANCE": "healthscore_performance",
+        "HEALTHSCORE_SECURITY": "healthscore_security",
+        "HEALTHSCORE_RELIABILITY": "healthscore_reliability",
+    }
+
     def __init__(self, client: F5XCClient, tenant: str):
         """Initialize unified load balancer collector."""
         self.client = client
@@ -139,6 +148,31 @@ class LoadBalancerCollector:
             "HTTP server round-trip time in seconds",
             labels
         )
+        self.http_healthscore_overall = Gauge(
+            "f5xc_http_lb_healthscore_overall",
+            "HTTP LB overall health score (0-100)",
+            labels
+        )
+        self.http_healthscore_connectivity = Gauge(
+            "f5xc_http_lb_healthscore_connectivity",
+            "HTTP LB connectivity health score (0-100)",
+            labels
+        )
+        self.http_healthscore_performance = Gauge(
+            "f5xc_http_lb_healthscore_performance",
+            "HTTP LB performance health score (0-100)",
+            labels
+        )
+        self.http_healthscore_security = Gauge(
+            "f5xc_http_lb_healthscore_security",
+            "HTTP LB security health score (0-100)",
+            labels
+        )
+        self.http_healthscore_reliability = Gauge(
+            "f5xc_http_lb_healthscore_reliability",
+            "HTTP LB reliability health score (0-100)",
+            labels
+        )
 
         # --- TCP LB Metrics ---
         self.tcp_connection_rate = Gauge(
@@ -186,6 +220,31 @@ class LoadBalancerCollector:
             "TCP server round-trip time in seconds",
             labels
         )
+        self.tcp_healthscore_overall = Gauge(
+            "f5xc_tcp_lb_healthscore_overall",
+            "TCP LB overall health score (0-100)",
+            labels
+        )
+        self.tcp_healthscore_connectivity = Gauge(
+            "f5xc_tcp_lb_healthscore_connectivity",
+            "TCP LB connectivity health score (0-100)",
+            labels
+        )
+        self.tcp_healthscore_performance = Gauge(
+            "f5xc_tcp_lb_healthscore_performance",
+            "TCP LB performance health score (0-100)",
+            labels
+        )
+        self.tcp_healthscore_security = Gauge(
+            "f5xc_tcp_lb_healthscore_security",
+            "TCP LB security health score (0-100)",
+            labels
+        )
+        self.tcp_healthscore_reliability = Gauge(
+            "f5xc_tcp_lb_healthscore_reliability",
+            "TCP LB reliability health score (0-100)",
+            labels
+        )
 
         # --- UDP LB Metrics ---
         self.udp_request_throughput = Gauge(
@@ -206,6 +265,31 @@ class LoadBalancerCollector:
         self.udp_server_rtt = Gauge(
             "f5xc_udp_lb_server_rtt_seconds",
             "UDP server round-trip time in seconds",
+            labels
+        )
+        self.udp_healthscore_overall = Gauge(
+            "f5xc_udp_lb_healthscore_overall",
+            "UDP LB overall health score (0-100)",
+            labels
+        )
+        self.udp_healthscore_connectivity = Gauge(
+            "f5xc_udp_lb_healthscore_connectivity",
+            "UDP LB connectivity health score (0-100)",
+            labels
+        )
+        self.udp_healthscore_performance = Gauge(
+            "f5xc_udp_lb_healthscore_performance",
+            "UDP LB performance health score (0-100)",
+            labels
+        )
+        self.udp_healthscore_security = Gauge(
+            "f5xc_udp_lb_healthscore_security",
+            "UDP LB security health score (0-100)",
+            labels
+        )
+        self.udp_healthscore_reliability = Gauge(
+            "f5xc_udp_lb_healthscore_reliability",
+            "UDP LB reliability health score (0-100)",
             labels
         )
 
@@ -334,6 +418,19 @@ class LoadBalancerCollector:
         for metric in upstream_metrics:
             self._process_metric(metric, namespace, vhost, site, virtual_host_type, "upstream")
 
+        # Process healthscore data
+        healthscore_data = node_data.get("healthscore", {})
+
+        # Process downstream healthscores (client -> LB)
+        downstream_healthscores = healthscore_data.get("downstream", [])
+        for healthscore in downstream_healthscores:
+            self._process_healthscore(healthscore, namespace, vhost, site, virtual_host_type, "downstream")
+
+        # Process upstream healthscores (LB -> origin)
+        upstream_healthscores = healthscore_data.get("upstream", [])
+        for healthscore in upstream_healthscores:
+            self._process_healthscore(healthscore, namespace, vhost, site, virtual_host_type, "upstream")
+
         return virtual_host_type
 
     def _process_metric(
@@ -425,5 +522,72 @@ class LoadBalancerCollector:
                 return self.udp_client_rtt
             if metric_type == "SERVER_RTT":
                 return self.udp_server_rtt
+
+        return None
+
+    def _process_healthscore(
+        self,
+        healthscore: dict[str, Any],
+        namespace: str,
+        load_balancer: str,
+        site: str,
+        lb_type: str,
+        direction: str
+    ) -> None:
+        """Process a single healthscore and update the corresponding Prometheus gauge."""
+        healthscore_type = healthscore.get("type", "")
+        value_data = healthscore.get("value", {})
+
+        # Get the latest raw value
+        raw_values = value_data.get("raw", [])
+        if not raw_values:
+            return
+
+        # Use the most recent value
+        latest = raw_values[-1] if raw_values else {}
+        value = latest.get("value")
+
+        if value is None:
+            return
+
+        try:
+            value = float(value)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Failed to parse healthscore value",
+                healthscore_type=healthscore_type,
+                value=latest.get("value")
+            )
+            return
+
+        # Get the gauge for this healthscore based on LB type
+        gauge = self._get_gauge_for_healthscore(healthscore_type, lb_type)
+        if gauge:
+            gauge.labels(
+                tenant=self.tenant,
+                namespace=namespace,
+                load_balancer=load_balancer,
+                site=site,
+                direction=direction
+            ).set(value)
+
+    def _get_gauge_for_healthscore(self, healthscore_type: str, lb_type: str) -> Optional[Gauge]:
+        """Get the appropriate Prometheus gauge for a healthscore type and LB type."""
+        if healthscore_type not in self.HEALTHSCORE_MAP:
+            return None
+
+        healthscore_attr = self.HEALTHSCORE_MAP[healthscore_type]
+
+        # HTTP healthscores
+        if lb_type == "HTTP_LOAD_BALANCER":
+            return getattr(self, f"http_{healthscore_attr}", None)
+
+        # TCP healthscores
+        elif lb_type == "TCP_LOAD_BALANCER":
+            return getattr(self, f"tcp_{healthscore_attr}", None)
+
+        # UDP healthscores
+        elif lb_type == "UDP_LOAD_BALANCER":
+            return getattr(self, f"udp_{healthscore_attr}", None)
 
         return None

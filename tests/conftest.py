@@ -92,6 +92,22 @@ def sample_unified_lb_response():
                                 {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 800000}]}},
                                 {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.015}]}},
                             ]
+                        },
+                        "healthscore": {
+                            "downstream": [
+                                {"type": "HEALTHSCORE_OVERALL", "value": {"raw": [{"timestamp": 1234567890, "value": 95.0}]}},
+                                {"type": "HEALTHSCORE_CONNECTIVITY", "value": {"raw": [{"timestamp": 1234567890, "value": 98.0}]}},
+                                {"type": "HEALTHSCORE_PERFORMANCE", "value": {"raw": [{"timestamp": 1234567890, "value": 92.0}]}},
+                                {"type": "HEALTHSCORE_SECURITY", "value": {"raw": [{"timestamp": 1234567890, "value": 100.0}]}},
+                                {"type": "HEALTHSCORE_RELIABILITY", "value": {"raw": [{"timestamp": 1234567890, "value": 94.0}]}},
+                            ],
+                            "upstream": [
+                                {"type": "HEALTHSCORE_OVERALL", "value": {"raw": [{"timestamp": 1234567890, "value": 90.0}]}},
+                                {"type": "HEALTHSCORE_CONNECTIVITY", "value": {"raw": [{"timestamp": 1234567890, "value": 95.0}]}},
+                                {"type": "HEALTHSCORE_PERFORMANCE", "value": {"raw": [{"timestamp": 1234567890, "value": 85.0}]}},
+                                {"type": "HEALTHSCORE_SECURITY", "value": {"raw": [{"timestamp": 1234567890, "value": 100.0}]}},
+                                {"type": "HEALTHSCORE_RELIABILITY", "value": {"raw": [{"timestamp": 1234567890, "value": 88.0}]}},
+                            ]
                         }
                     }
                 },

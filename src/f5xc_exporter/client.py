@@ -523,6 +523,15 @@ class F5XCClient:
                 "node": {
                     "metric": {
                         "downstream": all_metrics
+                    },
+                    "healthscore": {
+                        "downstream": [
+                            "HEALTHSCORE_OVERALL",
+                            "HEALTHSCORE_CONNECTIVITY",
+                            "HEALTHSCORE_PERFORMANCE",
+                            "HEALTHSCORE_SECURITY",
+                            "HEALTHSCORE_RELIABILITY"
+                        ]
                     }
                 }
             },
