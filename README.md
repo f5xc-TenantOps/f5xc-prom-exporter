@@ -149,13 +149,16 @@ livenessProbe:
 
 Returns 200 if F5XC API is accessible and authenticated, 503 otherwise. Use for Kubernetes readiness probes.
 
+**Note:** The readiness state is cached and updated every 30 seconds by a background thread to avoid hammering the F5XC API on every probe request.
+
 **Example response (ready):**
 ```json
 {
   "status": "ready",
   "timestamp": "2026-01-08T19:00:00.000000+00:00",
   "api_accessible": true,
-  "namespace_count": 3
+  "namespace_count": 3,
+  "last_check": "2026-01-08T18:59:45.000000+00:00"
 }
 ```
 
@@ -165,7 +168,8 @@ Returns 200 if F5XC API is accessible and authenticated, 503 otherwise. Use for 
   "status": "not_ready",
   "timestamp": "2026-01-08T19:00:00.000000+00:00",
   "api_accessible": false,
-  "error": "Connection refused"
+  "error": "API connection failed",
+  "last_check": "2026-01-08T18:59:45.000000+00:00"
 }
 ```
 

@@ -96,6 +96,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
     def _handle_ready(self) -> None:
         """Handle /ready endpoint.
 
+        Returns cached readiness state (updated by background thread).
         Returns 200 if F5XC API is reachable and authenticated.
         Returns 503 if the API is not accessible.
         """
@@ -105,23 +106,29 @@ class MetricsHandler(BaseHTTPRequestHandler):
                 self._send_error_response(500, "Server not properly initialized")
                 return
 
-            # Test F5XC API connectivity by listing namespaces
-            try:
-                namespaces = server.client.list_namespaces()
+            # Return cached readiness state (no blocking API call)
+            with server._readiness_lock:
+                is_ready = server._is_ready
+                namespace_count = server._ready_namespace_count
+                error = server._ready_error
+                last_check = server._ready_last_check
+
+            if is_ready:
                 response_data = {
                     "status": "ready",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "api_accessible": True,
-                    "namespace_count": len(namespaces),
+                    "namespace_count": namespace_count,
+                    "last_check": last_check.isoformat(),
                 }
                 self._send_json_response(200, response_data)
-            except Exception as api_error:
-                logger.warning("Readiness check failed", error=str(api_error))
+            else:
                 response_data = {
                     "status": "not_ready",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "api_accessible": False,
-                    "error": str(api_error),
+                    "error": error or "API check has not completed yet",
+                    "last_check": last_check.isoformat(),
                 }
                 self._send_json_response(503, response_data)
         except Exception as e:
@@ -255,6 +262,13 @@ class MetricsServer:
         self.collection_threads: dict[str, threading.Thread] = {}
         self.stop_event = threading.Event()
 
+        # Readiness state (cached to avoid blocking API calls on every probe)
+        self._readiness_lock = threading.Lock()
+        self._is_ready = False
+        self._ready_namespace_count = 0
+        self._ready_error: Optional[str] = None
+        self._ready_last_check = datetime.now(timezone.utc)
+
         # HTTP server
         self.httpd: Optional[HTTPServer] = None
 
@@ -270,6 +284,16 @@ class MetricsServer:
 
     def _start_collection_threads(self) -> None:
         """Start metric collection threads."""
+        # Start readiness monitoring thread (always enabled)
+        readiness_thread = threading.Thread(
+            target=self._monitor_readiness,
+            name="readiness-monitor",
+            daemon=True
+        )
+        readiness_thread.start()
+        self.collection_threads["readiness"] = readiness_thread
+        logger.info("Started readiness monitoring", interval=30)
+
         # Quota metrics collection
         if self.config.f5xc_quota_interval > 0:
             quota_thread = threading.Thread(
@@ -439,6 +463,52 @@ class MetricsServer:
             # Wait for next collection interval
             if self.stop_event.wait(self.config.f5xc_dns_interval):
                 break
+
+    def _check_readiness(self) -> None:
+        """Check API readiness and update cached state.
+
+        This method performs a lightweight API call to verify connectivity
+        and authentication. The result is cached to avoid hammering the API
+        on every readiness probe request.
+        """
+        try:
+            # Lightweight API call to check connectivity
+            namespaces = self.client.list_namespaces()
+
+            # Update cached state
+            with self._readiness_lock:
+                self._is_ready = True
+                self._ready_namespace_count = len(namespaces)
+                self._ready_error = None
+                self._ready_last_check = datetime.now(timezone.utc)
+
+            logger.debug("Readiness check passed", namespace_count=len(namespaces))
+
+        except Exception as e:
+            # Update cached state with error
+            with self._readiness_lock:
+                self._is_ready = False
+                self._ready_namespace_count = 0
+                self._ready_error = "API connection failed"
+                self._ready_last_check = datetime.now(timezone.utc)
+
+            logger.warning("Readiness check failed", error=str(e))
+
+    def _monitor_readiness(self) -> None:
+        """Background thread to periodically check API readiness.
+
+        Checks readiness every 30 seconds to keep cached state fresh
+        without overloading the API or blocking readiness probes.
+        """
+        # Run initial check immediately
+        self._check_readiness()
+
+        while not self.stop_event.is_set():
+            # Wait 30 seconds between checks
+            if self.stop_event.wait(30):
+                break
+
+            self._check_readiness()
 
     def stop(self) -> None:
         """Stop the metrics server and collection threads."""

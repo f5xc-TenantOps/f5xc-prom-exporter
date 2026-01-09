@@ -294,7 +294,8 @@ class TestMetricsServerIntegration:
             server = MetricsServer(test_config)
             server_thread = threading.Thread(target=server.start, daemon=True)
             server_thread.start()
-            time.sleep(0.5)
+            # Wait longer for initial readiness check to complete
+            time.sleep(1.0)
 
             try:
                 response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/ready", timeout=5)
@@ -306,6 +307,7 @@ class TestMetricsServerIntegration:
                 assert data["api_accessible"] is True
                 assert data["namespace_count"] == 3
                 assert "timestamp" in data
+                assert "last_check" in data
 
             finally:
                 server.stop()
@@ -318,17 +320,8 @@ class TestMetricsServerIntegration:
             mock_client = Mock()
             mock_client_class.return_value = mock_client
 
-            # Set up a counter to track list_namespaces calls
-            call_count = [0]
-            def list_namespaces_side_effect():
-                call_count[0] += 1
-                # Fail on the readiness check (which happens after server starts)
-                # but succeed on initial collector setup
-                if call_count[0] > 1:
-                    raise Exception("Connection refused")
-                return []
-
-            mock_client.list_namespaces.side_effect = list_namespaces_side_effect
+            # Make all list_namespaces calls fail to simulate API being down
+            mock_client.list_namespaces.side_effect = Exception("Connection refused")
 
             # Mock other API calls to prevent collection errors
             mock_client.get_quota_usage.return_value = {"quota_usage": {}}
@@ -343,7 +336,8 @@ class TestMetricsServerIntegration:
             server = MetricsServer(test_config)
             server_thread = threading.Thread(target=server.start, daemon=True)
             server_thread.start()
-            time.sleep(0.5)
+            # Wait longer for initial readiness check to complete
+            time.sleep(1.0)
 
             try:
                 response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/ready", timeout=5)
@@ -355,6 +349,7 @@ class TestMetricsServerIntegration:
                 assert data["api_accessible"] is False
                 assert "error" in data
                 assert "timestamp" in data
+                assert "last_check" in data
 
             finally:
                 server.stop()
