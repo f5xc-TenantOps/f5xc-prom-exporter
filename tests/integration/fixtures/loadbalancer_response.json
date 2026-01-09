@@ -1,0 +1,435 @@
+{
+  "data": {
+    "nodes": [
+      {
+        "id": {
+          "namespace": "prod",
+          "vhost": "app-frontend",
+          "site": "ce-site-1",
+          "virtual_host_type": "HTTP_LOAD_BALANCER"
+        },
+        "data": {
+          "metric": {
+            "downstream": [
+              {
+                "type": "HTTP_REQUEST_RATE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 150.5
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HTTP_ERROR_RATE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 2.5
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HTTP_RESPONSE_LATENCY",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 0.025
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "REQUEST_THROUGHPUT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 1000000
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "CLIENT_RTT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 0.01
+                    }
+                  ]
+                }
+              }
+            ],
+            "upstream": [
+              {
+                "type": "HTTP_REQUEST_RATE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 120.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HTTP_ERROR_RATE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 1.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HTTP_RESPONSE_LATENCY",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 0.05
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "REQUEST_THROUGHPUT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 800000
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "SERVER_RTT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 0.015
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "healthscore": {
+            "downstream": [
+              {
+                "type": "HEALTHSCORE_OVERALL",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 95.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HEALTHSCORE_CONNECTIVITY",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 98.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HEALTHSCORE_PERFORMANCE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 92.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HEALTHSCORE_SECURITY",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 100.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HEALTHSCORE_RELIABILITY",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 94.0
+                    }
+                  ]
+                }
+              }
+            ],
+            "upstream": [
+              {
+                "type": "HEALTHSCORE_OVERALL",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 90.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HEALTHSCORE_CONNECTIVITY",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 95.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HEALTHSCORE_PERFORMANCE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 85.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HEALTHSCORE_SECURITY",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 100.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "HEALTHSCORE_RELIABILITY",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 88.0
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": {
+          "namespace": "prod",
+          "vhost": "tcp-backend",
+          "site": "ce-site-1",
+          "virtual_host_type": "TCP_LOAD_BALANCER"
+        },
+        "data": {
+          "metric": {
+            "downstream": [
+              {
+                "type": "TCP_CONNECTION_RATE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 50.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "TCP_ERROR_RATE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 1.5
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "REQUEST_THROUGHPUT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 500000
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "CLIENT_RTT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 0.008
+                    }
+                  ]
+                }
+              }
+            ],
+            "upstream": [
+              {
+                "type": "TCP_CONNECTION_RATE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 45.0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "TCP_ERROR_RATE",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 0.5
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "REQUEST_THROUGHPUT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 450000
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "SERVER_RTT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 0.012
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": {
+          "namespace": "prod",
+          "vhost": "udp-dns-lb",
+          "site": "ce-site-1",
+          "virtual_host_type": "UDP_LOAD_BALANCER"
+        },
+        "data": {
+          "metric": {
+            "downstream": [
+              {
+                "type": "REQUEST_THROUGHPUT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 100000
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "RESPONSE_THROUGHPUT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 200000
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "CLIENT_RTT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 0.005
+                    }
+                  ]
+                }
+              }
+            ],
+            "upstream": [
+              {
+                "type": "REQUEST_THROUGHPUT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 95000
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "RESPONSE_THROUGHPUT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 190000
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "SERVER_RTT",
+                "value": {
+                  "raw": [
+                    {
+                      "timestamp": 1234567890,
+                      "value": 0.008
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "edges": []
+  }
+}

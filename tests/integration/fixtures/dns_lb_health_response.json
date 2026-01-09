@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "name": "global-dns-lb",
+      "namespace": "system",
+      "health_status": "HEALTHY"
+    },
+    {
+      "name": "regional-dns-lb",
+      "namespace": "system",
+      "health_status": "UNHEALTHY"
+    }
+  ],
+  "dns_lb_pools_status_summary": []
+}
