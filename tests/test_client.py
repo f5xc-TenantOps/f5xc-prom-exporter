@@ -29,12 +29,7 @@ class TestF5XCClient:
     @responses.activate
     def test_successful_get_request(self, test_config):
         """Test successful GET request."""
-        responses.add(
-            responses.GET,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"status": "ok"},
-            status=200
-        )
+        responses.add(responses.GET, "https://test.console.ves.volterra.io/api/test", json={"status": "ok"}, status=200)
 
         client = F5XCClient(test_config)
         result = client.get("/api/test")
@@ -46,10 +41,7 @@ class TestF5XCClient:
     def test_successful_post_request(self, test_config):
         """Test successful POST request."""
         responses.add(
-            responses.POST,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"created": True},
-            status=201
+            responses.POST, "https://test.console.ves.volterra.io/api/test", json={"created": True}, status=201
         )
 
         client = F5XCClient(test_config)
@@ -63,10 +55,7 @@ class TestF5XCClient:
     def test_authentication_error(self, test_config):
         """Test authentication error handling."""
         responses.add(
-            responses.GET,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"error": "Unauthorized"},
-            status=401
+            responses.GET, "https://test.console.ves.volterra.io/api/test", json={"error": "Unauthorized"}, status=401
         )
 
         client = F5XCClient(test_config)
@@ -98,10 +87,7 @@ class TestF5XCClient:
     def test_general_api_error(self, test_config):
         """Test general API error handling."""
         responses.add(
-            responses.GET,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"error": "Server Error"},
-            status=500
+            responses.GET, "https://test.console.ves.volterra.io/api/test", json={"error": "Server Error"}, status=500
         )
 
         client = F5XCClient(test_config)
@@ -118,7 +104,7 @@ class TestF5XCClient:
             responses.GET,
             "https://test.console.ves.volterra.io/api/web/namespaces/system/quota/usage",
             json=sample_quota_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -134,7 +120,7 @@ class TestF5XCClient:
             responses.GET,
             "https://test.console.ves.volterra.io/api/web/namespaces/custom/quota/usage",
             json=sample_quota_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -150,7 +136,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/service",
             json=sample_service_graph_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -174,13 +160,13 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/demo-shop/app_firewall/metrics",
             json={"data": [], "step": "5m"},
-            status=200
+            status=200,
         )
         responses.add(
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/demo-shop/app_security/events/aggregation",
             json={"aggs": {}, "total_hits": "0"},
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -199,7 +185,7 @@ class TestF5XCClient:
             responses.GET,
             "https://test.console.ves.volterra.io/api/observability/synthetic_monitor/namespaces/demo-shop/global-summary",
             json=sample_synthetic_http_summary_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -217,7 +203,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/all_ns_service",
             json=sample_http_lb_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -228,6 +214,7 @@ class TestF5XCClient:
 
         # Check POST payload contains expected fields
         import json
+
         request_body = json.loads(responses.calls[0].request.body)
         assert "field_selector" in request_body
         assert "node" in request_body["field_selector"]
@@ -248,7 +235,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/all_ns_service",
             json=sample_tcp_lb_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -259,6 +246,7 @@ class TestF5XCClient:
 
         # Check POST payload contains expected fields
         import json
+
         request_body = json.loads(responses.calls[0].request.body)
         assert "field_selector" in request_body
         assert "node" in request_body["field_selector"]
@@ -279,7 +267,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/all_ns_service",
             json=sample_udp_lb_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -290,6 +278,7 @@ class TestF5XCClient:
 
         # Check POST payload contains expected fields
         import json
+
         request_body = json.loads(responses.calls[0].request.body)
         assert "field_selector" in request_body
         assert "node" in request_body["field_selector"]
@@ -319,7 +308,7 @@ class TestF5XCClient:
                     {"name": "ves-io-internal"},  # Should be filtered out
                 ]
             },
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -338,7 +327,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/prod/graph/service",
             json=sample_http_lb_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -376,7 +365,7 @@ class TestF5XCClient:
                     {"name": "staging"},
                 ]
             },
-            status=200
+            status=200,
         )
 
         # Mock per-namespace service graph calls
@@ -385,28 +374,32 @@ class TestF5XCClient:
             "https://test.console.ves.volterra.io/api/data/namespaces/prod/graph/service",
             json={
                 "data": {
-                    "nodes": [{
-                        "id": {"vhost": "app-1", "site": "site-1", "virtual_host_type": "HTTP_LOAD_BALANCER"},
-                        "data": {"metric": {"downstream": []}}
-                    }],
-                    "edges": []
+                    "nodes": [
+                        {
+                            "id": {"vhost": "app-1", "site": "site-1", "virtual_host_type": "HTTP_LOAD_BALANCER"},
+                            "data": {"metric": {"downstream": []}},
+                        }
+                    ],
+                    "edges": [],
                 }
             },
-            status=200
+            status=200,
         )
         responses.add(
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/staging/graph/service",
             json={
                 "data": {
-                    "nodes": [{
-                        "id": {"vhost": "app-2", "site": "site-2", "virtual_host_type": "TCP_LOAD_BALANCER"},
-                        "data": {"metric": {"downstream": []}}
-                    }],
-                    "edges": []
+                    "nodes": [
+                        {
+                            "id": {"vhost": "app-2", "site": "site-2", "virtual_host_type": "TCP_LOAD_BALANCER"},
+                            "data": {"metric": {"downstream": []}},
+                        }
+                    ],
+                    "edges": [],
                 }
             },
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -433,7 +426,7 @@ class TestF5XCClient:
                     {"name": "broken"},
                 ]
             },
-            status=200
+            status=200,
         )
 
         # Mock prod namespace - success
@@ -442,14 +435,16 @@ class TestF5XCClient:
             "https://test.console.ves.volterra.io/api/data/namespaces/prod/graph/service",
             json={
                 "data": {
-                    "nodes": [{
-                        "id": {"vhost": "app-1", "site": "site-1", "virtual_host_type": "HTTP_LOAD_BALANCER"},
-                        "data": {"metric": {"downstream": []}}
-                    }],
-                    "edges": []
+                    "nodes": [
+                        {
+                            "id": {"vhost": "app-1", "site": "site-1", "virtual_host_type": "HTTP_LOAD_BALANCER"},
+                            "data": {"metric": {"downstream": []}},
+                        }
+                    ],
+                    "edges": [],
                 }
             },
-            status=200
+            status=200,
         )
 
         # Mock broken namespace - failure
@@ -457,7 +452,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/broken/graph/service",
             json={"error": "Internal Server Error"},
-            status=500
+            status=500,
         )
 
         client = F5XCClient(test_config)
@@ -481,16 +476,9 @@ class TestF5XCClient:
     def test_url_construction(self, test_config):
         """Test URL construction handles trailing slashes correctly."""
         # Test with trailing slash in config
-        config_with_slash = test_config.model_copy(update={
-            'f5xc_tenant_url': 'https://test.console.ves.volterra.io/'
-        })
+        config_with_slash = test_config.model_copy(update={"f5xc_tenant_url": "https://test.console.ves.volterra.io/"})
 
-        responses.add(
-            responses.GET,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"ok": True},
-            status=200
-        )
+        responses.add(responses.GET, "https://test.console.ves.volterra.io/api/test", json={"ok": True}, status=200)
 
         client = F5XCClient(config_with_slash)
         result = client.get("/api/test")

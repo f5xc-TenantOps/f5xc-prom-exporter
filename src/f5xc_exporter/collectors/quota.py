@@ -5,6 +5,7 @@ from typing import Any, Optional
 import structlog
 from prometheus_client import Gauge
 
+from ..cardinality import CardinalityTracker
 from ..client import F5XCAPIError, F5XCClient
 
 logger = structlog.get_logger()
@@ -13,40 +14,45 @@ logger = structlog.get_logger()
 class QuotaCollector:
     """Collector for F5XC quota metrics."""
 
-    def __init__(self, client: F5XCClient, tenant: str):
-        """Initialize quota collector."""
+    def __init__(
+        self,
+        client: F5XCClient,
+        tenant: str,
+        cardinality_tracker: Optional[CardinalityTracker] = None,
+    ):
+        """Initialize quota collector.
+
+        Args:
+            client: F5XC API client
+            tenant: Tenant name
+            cardinality_tracker: Optional cardinality tracker for limit enforcement
+        """
         self.client = client
         self.tenant = tenant
+        self.cardinality_tracker = cardinality_tracker
+        self.quota_metric_count = 0
 
         # Prometheus metrics
         self.quota_limit = Gauge(
-            "f5xc_quota_limit",
-            "F5XC quota limit",
-            ["tenant", "namespace", "resource_type", "resource_name"]
+            "f5xc_quota_limit", "F5XC quota limit", ["tenant", "namespace", "resource_type", "resource_name"]
         )
 
         self.quota_current = Gauge(
-            "f5xc_quota_current",
-            "F5XC quota current usage",
-            ["tenant", "namespace", "resource_type", "resource_name"]
+            "f5xc_quota_current", "F5XC quota current usage", ["tenant", "namespace", "resource_type", "resource_name"]
         )
 
         self.quota_utilization = Gauge(
             "f5xc_quota_utilization_percentage",
             "F5XC quota utilization percentage",
-            ["tenant", "namespace", "resource_type", "resource_name"]
+            ["tenant", "namespace", "resource_type", "resource_name"],
         )
 
         self.quota_collection_success = Gauge(
-            "f5xc_quota_collection_success",
-            "Whether quota collection succeeded",
-            ["tenant", "namespace"]
+            "f5xc_quota_collection_success", "Whether quota collection succeeded", ["tenant", "namespace"]
         )
 
         self.quota_collection_duration = Gauge(
-            "f5xc_quota_collection_duration_seconds",
-            "Time taken to collect quota metrics",
-            ["tenant", "namespace"]
+            "f5xc_quota_collection_duration_seconds", "Time taken to collect quota metrics", ["tenant", "namespace"]
         )
 
     def collect_metrics(self, namespace: str = "system") -> None:
@@ -56,7 +62,19 @@ class QuotaCollector:
         start_time = time.time()
 
         try:
+            # Check cardinality limits if tracker is enabled
+            if self.cardinality_tracker:
+                if not self.cardinality_tracker.check_namespace_limit(namespace, "quota"):
+                    logger.warning(
+                        "Skipping quota collection due to namespace limit",
+                        namespace=namespace,
+                    )
+                    return
+
             logger.info("Collecting quota metrics", namespace=namespace)
+
+            # Reset metric count for this collection
+            self.quota_metric_count = 0
 
             # Get quota usage data
             quota_data = self.client.get_quota_usage(namespace)
@@ -74,7 +92,12 @@ class QuotaCollector:
                 "Quota metrics collection successful",
                 namespace=namespace,
                 duration=collection_duration,
+                quota_metric_count=self.quota_metric_count,
             )
+
+            # Update cardinality tracking if enabled
+            if self.cardinality_tracker:
+                self.cardinality_tracker.update_metric_cardinality("quota", "quota_metrics", self.quota_metric_count)
 
         except F5XCAPIError as e:
             logger.error(
@@ -127,14 +150,14 @@ class QuotaCollector:
                             tenant=self.tenant,
                             namespace=namespace,
                             resource_type=resource_type,
-                            resource_name=resource_name
+                            resource_name=resource_name,
                         ).set(limit_val)
 
                         self.quota_current.labels(
                             tenant=self.tenant,
                             namespace=namespace,
                             resource_type=resource_type,
-                            resource_name=resource_name
+                            resource_name=resource_name,
                         ).set(current_val)
 
                         # Calculate utilization percentage
@@ -144,7 +167,7 @@ class QuotaCollector:
                             tenant=self.tenant,
                             namespace=namespace,
                             resource_type=resource_type,
-                            resource_name=resource_name
+                            resource_name=resource_name,
                         ).set(utilization)
 
                         logger.debug(
@@ -156,13 +179,16 @@ class QuotaCollector:
                             current=current_val,
                             utilization=utilization,
                         )
+
+                        # Track metric count
+                        self.quota_metric_count += 1
                     except (ValueError, TypeError) as e:
                         logger.warning(
                             "Failed to parse quota values",
                             resource_name=resource_name,
                             limit=limit,
                             current=current,
-                            error=str(e)
+                            error=str(e),
                         )
 
     def _process_quotas_list(self, quotas: list[dict[str, Any]], namespace: str) -> None:
@@ -191,11 +217,7 @@ class QuotaCollector:
         self._process_quota_info(quota, namespace, resource_type, resource_name)
 
     def _process_quota_info(
-        self,
-        quota_info: dict[str, Any],
-        namespace: str,
-        resource_type: str,
-        resource_name: str
+        self, quota_info: dict[str, Any], namespace: str, resource_type: str, resource_name: str
     ) -> None:
         """Process individual quota information."""
         # Get limit and current usage
@@ -205,26 +227,17 @@ class QuotaCollector:
         if limit is not None and current is not None:
             # Set Prometheus metrics
             self.quota_limit.labels(
-                tenant=self.tenant,
-                namespace=namespace,
-                resource_type=resource_type,
-                resource_name=resource_name
+                tenant=self.tenant, namespace=namespace, resource_type=resource_type, resource_name=resource_name
             ).set(limit)
 
             self.quota_current.labels(
-                tenant=self.tenant,
-                namespace=namespace,
-                resource_type=resource_type,
-                resource_name=resource_name
+                tenant=self.tenant, namespace=namespace, resource_type=resource_type, resource_name=resource_name
             ).set(current)
 
             # Calculate utilization percentage
             utilization = (current / limit * 100) if limit > 0 else 0
             self.quota_utilization.labels(
-                tenant=self.tenant,
-                namespace=namespace,
-                resource_type=resource_type,
-                resource_name=resource_name
+                tenant=self.tenant, namespace=namespace, resource_type=resource_type, resource_name=resource_name
             ).set(utilization)
 
             logger.debug(

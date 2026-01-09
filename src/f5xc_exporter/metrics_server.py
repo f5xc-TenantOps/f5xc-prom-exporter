@@ -10,6 +10,7 @@ import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 
 from . import __version__
+from .cardinality import CardinalityTracker
 from .client import F5XCClient
 from .collectors import (
     DNSCollector,
@@ -40,11 +41,11 @@ class MetricsHandler(BaseHTTPRequestHandler):
     def _handle_metrics(self) -> None:
         """Handle /metrics endpoint."""
         try:
-            registry = getattr(self.server, 'registry', None)
+            registry = getattr(self.server, "registry", None)
             if registry:
                 metrics = generate_latest(registry)
                 self.send_response(200)
-                self.send_header('Content-Type', CONTENT_TYPE_LATEST)
+                self.send_header("Content-Type", CONTENT_TYPE_LATEST)
                 self.end_headers()
                 self.wfile.write(metrics)
             else:
@@ -60,7 +61,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
         Returns JSON with status, version, and collector information.
         """
         try:
-            server = getattr(self.server, 'metrics_server', None)
+            server = getattr(self.server, "metrics_server", None)
             if not server:
                 self._send_error_response(500, "Server not properly initialized")
                 return
@@ -77,7 +78,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
             lb_interval = max(
                 server.config.f5xc_http_lb_interval,
                 server.config.f5xc_tcp_lb_interval,
-                server.config.f5xc_udp_lb_interval
+                server.config.f5xc_udp_lb_interval,
             )
             collectors["loadbalancer"] = "enabled" if lb_interval > 0 else "disabled"
 
@@ -101,7 +102,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
         Returns 503 if the API is not accessible.
         """
         try:
-            server = getattr(self.server, 'metrics_server', None)
+            server = getattr(self.server, "metrics_server", None)
             if not server:
                 self._send_error_response(500, "Server not properly initialized")
                 return
@@ -142,17 +143,17 @@ class MetricsHandler(BaseHTTPRequestHandler):
     def _send_json_response(self, status_code: int, data: dict[str, Any]) -> None:
         """Send JSON response."""
         self.send_response(status_code)
-        self.send_header('Content-Type', 'application/json')
+        self.send_header("Content-Type", "application/json")
         self.end_headers()
         json_data = json.dumps(data)
-        self.wfile.write(json_data.encode('utf-8'))
+        self.wfile.write(json_data.encode("utf-8"))
 
     def _send_error_response(self, status_code: int, message: str) -> None:
         """Send error response."""
         self.send_response(status_code)
-        self.send_header('Content-Type', 'text/plain')
+        self.send_header("Content-Type", "text/plain")
         self.end_headers()
-        self.wfile.write(message.encode('utf-8'))
+        self.wfile.write(message.encode("utf-8"))
 
     def log_message(self, format_string: str, *args: Any) -> None:
         """Override to use structured logging."""
@@ -168,13 +169,23 @@ class MetricsServer:
         self.registry = CollectorRegistry()
         self.client = F5XCClient(config)
 
+        # Initialize cardinality tracker
+        self.cardinality_tracker = CardinalityTracker(
+            max_namespaces=config.f5xc_max_namespaces,
+            max_load_balancers_per_namespace=config.f5xc_max_load_balancers_per_namespace,
+            max_dns_zones=config.f5xc_max_dns_zones,
+            warn_cardinality_threshold=config.f5xc_warn_cardinality_threshold,
+        )
+
         # Initialize collectors and register them with the registry
         tenant = config.tenant_name
-        self.quota_collector = QuotaCollector(self.client, tenant)
-        self.security_collector = SecurityCollector(self.client, tenant)
-        self.synthetic_monitoring_collector = SyntheticMonitoringCollector(self.client, tenant)
-        self.lb_collector = LoadBalancerCollector(self.client, tenant)
-        self.dns_collector = DNSCollector(self.client, tenant)
+        self.quota_collector = QuotaCollector(self.client, tenant, self.cardinality_tracker)
+        self.security_collector = SecurityCollector(self.client, tenant, self.cardinality_tracker)
+        self.synthetic_monitoring_collector = SyntheticMonitoringCollector(
+            self.client, tenant, self.cardinality_tracker
+        )
+        self.lb_collector = LoadBalancerCollector(self.client, tenant, self.cardinality_tracker)
+        self.dns_collector = DNSCollector(self.client, tenant, self.cardinality_tracker)
 
         # Register individual metrics with Prometheus registry
         # Quota metrics
@@ -258,6 +269,13 @@ class MetricsServer:
         self.registry.register(self.dns_collector.zone_count)
         self.registry.register(self.dns_collector.dns_lb_count)
 
+        # Cardinality tracker metrics
+        self.registry.register(self.cardinality_tracker.metric_cardinality)
+        self.registry.register(self.cardinality_tracker.cardinality_limit_exceeded)
+        self.registry.register(self.cardinality_tracker.total_tracked_namespaces)
+        self.registry.register(self.cardinality_tracker.total_tracked_load_balancers)
+        self.registry.register(self.cardinality_tracker.total_tracked_dns_zones)
+
         # Collection threads
         self.collection_threads: dict[str, threading.Thread] = {}
         self.stop_event = threading.Event()
@@ -285,22 +303,14 @@ class MetricsServer:
     def _start_collection_threads(self) -> None:
         """Start metric collection threads."""
         # Start readiness monitoring thread (always enabled)
-        readiness_thread = threading.Thread(
-            target=self._monitor_readiness,
-            name="readiness-monitor",
-            daemon=True
-        )
+        readiness_thread = threading.Thread(target=self._monitor_readiness, name="readiness-monitor", daemon=True)
         readiness_thread.start()
         self.collection_threads["readiness"] = readiness_thread
         logger.info("Started readiness monitoring", interval=30)
 
         # Quota metrics collection
         if self.config.f5xc_quota_interval > 0:
-            quota_thread = threading.Thread(
-                target=self._collect_quota_metrics,
-                name="quota-collector",
-                daemon=True
-            )
+            quota_thread = threading.Thread(target=self._collect_quota_metrics, name="quota-collector", daemon=True)
             quota_thread.start()
             self.collection_threads["quota"] = quota_thread
             logger.info("Started quota metrics collection", interval=self.config.f5xc_quota_interval)
@@ -310,9 +320,7 @@ class MetricsServer:
         # Security metrics collection
         if self.config.f5xc_security_interval > 0:
             security_thread = threading.Thread(
-                target=self._collect_security_metrics,
-                name="security-collector",
-                daemon=True
+                target=self._collect_security_metrics, name="security-collector", daemon=True
             )
             security_thread.start()
             self.collection_threads["security"] = security_thread
@@ -323,9 +331,7 @@ class MetricsServer:
         # Synthetic monitoring metrics collection
         if self.config.f5xc_synthetic_interval > 0:
             synthetic_thread = threading.Thread(
-                target=self._collect_synthetic_metrics,
-                name="synthetic-collector",
-                daemon=True
+                target=self._collect_synthetic_metrics, name="synthetic-collector", daemon=True
             )
             synthetic_thread.start()
             self.collection_threads["synthetic"] = synthetic_thread
@@ -335,16 +341,10 @@ class MetricsServer:
 
         # Unified Load Balancer metrics collection (HTTP, TCP, UDP)
         lb_interval = max(
-            self.config.f5xc_http_lb_interval,
-            self.config.f5xc_tcp_lb_interval,
-            self.config.f5xc_udp_lb_interval
+            self.config.f5xc_http_lb_interval, self.config.f5xc_tcp_lb_interval, self.config.f5xc_udp_lb_interval
         )
         if lb_interval > 0:
-            lb_thread = threading.Thread(
-                target=self._collect_lb_metrics,
-                name="lb-collector",
-                daemon=True
-            )
+            lb_thread = threading.Thread(target=self._collect_lb_metrics, name="lb-collector", daemon=True)
             lb_thread.start()
             self.collection_threads["lb"] = lb_thread
             logger.info("Started unified LB metrics collection (HTTP, TCP, UDP)", interval=lb_interval)
@@ -353,11 +353,7 @@ class MetricsServer:
 
         # DNS metrics collection
         if self.config.f5xc_dns_interval > 0:
-            dns_thread = threading.Thread(
-                target=self._collect_dns_metrics,
-                name="dns-collector",
-                daemon=True
-            )
+            dns_thread = threading.Thread(target=self._collect_dns_metrics, name="dns-collector", daemon=True)
             dns_thread.start()
             self.collection_threads["dns"] = dns_thread
             logger.info("Started DNS metrics collection", interval=self.config.f5xc_dns_interval)
@@ -429,9 +425,7 @@ class MetricsServer:
     def _collect_lb_metrics(self) -> None:
         """Collect all load balancer metrics (HTTP, TCP, UDP) periodically."""
         lb_interval = max(
-            self.config.f5xc_http_lb_interval,
-            self.config.f5xc_tcp_lb_interval,
-            self.config.f5xc_udp_lb_interval
+            self.config.f5xc_http_lb_interval, self.config.f5xc_tcp_lb_interval, self.config.f5xc_udp_lb_interval
         )
 
         while not self.stop_event.is_set():
@@ -534,9 +528,7 @@ class MetricsServer:
     def get_status(self) -> dict[str, Any]:
         """Get server status information."""
         lb_interval = max(
-            self.config.f5xc_http_lb_interval,
-            self.config.f5xc_tcp_lb_interval,
-            self.config.f5xc_udp_lb_interval
+            self.config.f5xc_http_lb_interval, self.config.f5xc_tcp_lb_interval, self.config.f5xc_udp_lb_interval
         )
 
         return {
@@ -548,9 +540,6 @@ class MetricsServer:
                 "lb_interval": lb_interval,
                 "dns_interval": self.config.f5xc_dns_interval,
             },
-            "threads": {
-                name: thread.is_alive()
-                for name, thread in self.collection_threads.items()
-            },
+            "threads": {name: thread.is_alive() for name, thread in self.collection_threads.items()},
             "server_running": self.httpd is not None,
         }

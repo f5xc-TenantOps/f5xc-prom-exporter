@@ -1,6 +1,5 @@
 """Configuration management for F5XC Prometheus Exporter."""
 
-
 from pydantic import Field, HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -8,11 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Config(BaseSettings):
     """Configuration for F5XC Prometheus Exporter."""
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Required F5XC settings
     f5xc_tenant_url: HttpUrl = Field(..., alias="F5XC_TENANT_URL")
@@ -36,10 +31,16 @@ class Config(BaseSettings):
     f5xc_request_timeout: int = Field(default=30, alias="F5XC_REQUEST_TIMEOUT")
     f5xc_retry_max_attempts: int = Field(default=3, alias="F5XC_RETRY_MAX_ATTEMPTS")
 
+    # Cardinality limits
+    f5xc_max_namespaces: int = Field(default=100, alias="F5XC_MAX_NAMESPACES")
+    f5xc_max_load_balancers_per_namespace: int = Field(default=50, alias="F5XC_MAX_LOAD_BALANCERS_PER_NAMESPACE")
+    f5xc_max_dns_zones: int = Field(default=100, alias="F5XC_MAX_DNS_ZONES")
+    f5xc_warn_cardinality_threshold: int = Field(default=10000, alias="F5XC_WARN_CARDINALITY_THRESHOLD")
+
     @property
     def tenant_url_str(self) -> str:
         """Get tenant URL as string without trailing slash."""
-        return str(self.f5xc_tenant_url).rstrip('/')
+        return str(self.f5xc_tenant_url).rstrip("/")
 
     @property
     def tenant_name(self) -> str:

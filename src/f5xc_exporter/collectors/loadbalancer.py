@@ -10,6 +10,7 @@ from typing import Any, Optional
 import structlog
 from prometheus_client import Gauge
 
+from ..cardinality import CardinalityTracker
 from ..client import F5XCAPIError, F5XCClient
 
 logger = structlog.get_logger()
@@ -64,10 +65,22 @@ class LoadBalancerCollector:
         "HEALTHSCORE_RELIABILITY": "healthscore_reliability",
     }
 
-    def __init__(self, client: F5XCClient, tenant: str):
-        """Initialize unified load balancer collector."""
+    def __init__(
+        self,
+        client: F5XCClient,
+        tenant: str,
+        cardinality_tracker: Optional[CardinalityTracker] = None,
+    ):
+        """Initialize unified load balancer collector.
+
+        Args:
+            client: F5XC API client
+            tenant: Tenant name
+            cardinality_tracker: Optional cardinality tracker for limit enforcement
+        """
         self.client = client
         self.tenant = tenant
+        self.cardinality_tracker = cardinality_tracker
 
         # Common labels for all metrics
         labels = ["tenant", "namespace", "load_balancer", "site", "direction"]
@@ -116,56 +129,28 @@ class LoadBalancerCollector:
 
         # Generate HTTP LB metrics
         for attr_suffix, metric_suffix, desc in http_metrics + common_metrics + healthscore_metrics:
-            setattr(
-                self,
-                f"http_{attr_suffix}",
-                Gauge(f"f5xc_http_lb_{metric_suffix}", f"HTTP LB {desc}", labels)
-            )
+            setattr(self, f"http_{attr_suffix}", Gauge(f"f5xc_http_lb_{metric_suffix}", f"HTTP LB {desc}", labels))
 
         # Generate TCP LB metrics
         for attr_suffix, metric_suffix, desc in tcp_metrics + common_metrics + healthscore_metrics:
-            setattr(
-                self,
-                f"tcp_{attr_suffix}",
-                Gauge(f"f5xc_tcp_lb_{metric_suffix}", f"TCP LB {desc}", labels)
-            )
+            setattr(self, f"tcp_{attr_suffix}", Gauge(f"f5xc_tcp_lb_{metric_suffix}", f"TCP LB {desc}", labels))
 
         # Generate UDP LB metrics (only common + healthscore)
         for attr_suffix, metric_suffix, desc in common_metrics + healthscore_metrics:
-            setattr(
-                self,
-                f"udp_{attr_suffix}",
-                Gauge(f"f5xc_udp_lb_{metric_suffix}", f"UDP LB {desc}", labels)
-            )
+            setattr(self, f"udp_{attr_suffix}", Gauge(f"f5xc_udp_lb_{metric_suffix}", f"UDP LB {desc}", labels))
 
         # --- Unified Collection Status Metrics ---
         self.collection_success = Gauge(
-            "f5xc_lb_collection_success",
-            "Whether LB metrics collection succeeded (1=success, 0=failure)",
-            ["tenant"]
+            "f5xc_lb_collection_success", "Whether LB metrics collection succeeded (1=success, 0=failure)", ["tenant"]
         )
         self.collection_duration = Gauge(
-            "f5xc_lb_collection_duration_seconds",
-            "Time taken to collect all LB metrics",
-            ["tenant"]
+            "f5xc_lb_collection_duration_seconds", "Time taken to collect all LB metrics", ["tenant"]
         )
 
         # Count metrics by type
-        self.http_lb_count = Gauge(
-            "f5xc_http_lb_count",
-            "Number of HTTP load balancers discovered",
-            ["tenant"]
-        )
-        self.tcp_lb_count = Gauge(
-            "f5xc_tcp_lb_count",
-            "Number of TCP load balancers discovered",
-            ["tenant"]
-        )
-        self.udp_lb_count = Gauge(
-            "f5xc_udp_lb_count",
-            "Number of UDP load balancers discovered",
-            ["tenant"]
-        )
+        self.http_lb_count = Gauge("f5xc_http_lb_count", "Number of HTTP load balancers discovered", ["tenant"])
+        self.tcp_lb_count = Gauge("f5xc_tcp_lb_count", "Number of TCP load balancers discovered", ["tenant"])
+        self.udp_lb_count = Gauge("f5xc_udp_lb_count", "Number of UDP load balancers discovered", ["tenant"])
 
     def collect_metrics(self) -> None:
         """Collect all load balancer metrics in a single pass."""
@@ -198,6 +183,25 @@ class LoadBalancerCollector:
                 tcp_lb_count=counts.get("TCP_LOAD_BALANCER", 0),
                 udp_lb_count=counts.get("UDP_LOAD_BALANCER", 0),
             )
+
+            # Update cardinality tracking if enabled
+            if self.cardinality_tracker:
+                # Track cardinality for each LB type
+                self.cardinality_tracker.update_metric_cardinality(
+                    "loadbalancer",
+                    "http_lb_metrics",
+                    counts.get("HTTP_LOAD_BALANCER", 0),
+                )
+                self.cardinality_tracker.update_metric_cardinality(
+                    "loadbalancer",
+                    "tcp_lb_metrics",
+                    counts.get("TCP_LOAD_BALANCER", 0),
+                )
+                self.cardinality_tracker.update_metric_cardinality(
+                    "loadbalancer",
+                    "udp_lb_metrics",
+                    counts.get("UDP_LOAD_BALANCER", 0),
+                )
 
         except F5XCAPIError as e:
             logger.error(
@@ -249,6 +253,16 @@ class LoadBalancerCollector:
         if vhost == "unknown":
             return None
 
+        # Check cardinality limits if tracker is enabled
+        if self.cardinality_tracker:
+            # Check namespace limit
+            if not self.cardinality_tracker.check_namespace_limit(namespace, "loadbalancer"):
+                return None
+
+            # Check load balancer limit per namespace
+            if not self.cardinality_tracker.check_load_balancer_limit(namespace, vhost, "loadbalancer"):
+                return None
+
         # Extract metrics from node data
         node_data = node.get("data", {})
         metric_data = node_data.get("metric", {})
@@ -287,7 +301,7 @@ class LoadBalancerCollector:
         lb_type: str,
         direction: str,
         gauge_lookup_fn,
-        data_type_name: str
+        data_type_name: str,
     ) -> None:
         """Process a single metric or healthscore datapoint.
 
@@ -321,33 +335,22 @@ class LoadBalancerCollector:
                 "Failed to parse datapoint value",
                 data_type_name=data_type_name,
                 type=data_type,
-                value=latest.get("value")
+                value=latest.get("value"),
             )
             return
 
         gauge = gauge_lookup_fn(data_type, lb_type)
         if gauge:
             gauge.labels(
-                tenant=self.tenant,
-                namespace=namespace,
-                load_balancer=load_balancer,
-                site=site,
-                direction=direction
+                tenant=self.tenant, namespace=namespace, load_balancer=load_balancer, site=site, direction=direction
             ).set(value)
 
     def _process_metric(
-        self,
-        metric: dict[str, Any],
-        namespace: str,
-        load_balancer: str,
-        site: str,
-        lb_type: str,
-        direction: str
+        self, metric: dict[str, Any], namespace: str, load_balancer: str, site: str, lb_type: str, direction: str
     ) -> None:
         """Process a single metric and update the corresponding Prometheus gauge."""
         self._process_datapoint(
-            metric, namespace, load_balancer, site, lb_type, direction,
-            self._get_gauge_for_metric, "metric"
+            metric, namespace, load_balancer, site, lb_type, direction, self._get_gauge_for_metric, "metric"
         )
 
     def _get_gauge_for_metric(self, metric_type: str, lb_type: str) -> Optional[Gauge]:
@@ -397,18 +400,18 @@ class LoadBalancerCollector:
         return None
 
     def _process_healthscore(
-        self,
-        healthscore: dict[str, Any],
-        namespace: str,
-        load_balancer: str,
-        site: str,
-        lb_type: str,
-        direction: str
+        self, healthscore: dict[str, Any], namespace: str, load_balancer: str, site: str, lb_type: str, direction: str
     ) -> None:
         """Process a single healthscore and update the corresponding Prometheus gauge."""
         self._process_datapoint(
-            healthscore, namespace, load_balancer, site, lb_type, direction,
-            self._get_gauge_for_healthscore, "healthscore"
+            healthscore,
+            namespace,
+            load_balancer,
+            site,
+            lb_type,
+            direction,
+            self._get_gauge_for_healthscore,
+            "healthscore",
         )
 
     def _get_gauge_for_healthscore(self, healthscore_type: str, lb_type: str) -> Optional[Gauge]:

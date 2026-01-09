@@ -37,22 +37,20 @@ class TestMetricsServerIntegration:
         Provides a pre-configured mock client with typical successful
         responses. Tests can override specific methods as needed.
         """
-        with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
+        with patch("f5xc_exporter.metrics_server.F5XCClient") as mock_client_class:
             mock_client = Mock()
             mock_client_class.return_value = mock_client
 
             # Default successful responses for all collectors
             mock_client.list_namespaces.return_value = ["test-ns"]
             mock_client.get_quota_usage.return_value = {"quota_usage": {}}
-            mock_client.get_all_lb_metrics_for_namespace.return_value = {
-                "http": [], "tcp": [], "udp": []
-            }
+            mock_client.get_all_lb_metrics_for_namespace.return_value = {"http": [], "tcp": [], "udp": []}
             mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
             mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
             mock_client.get_synthetic_summary.return_value = {
                 "critical_monitor_count": 0,
                 "number_of_monitors": 0,
-                "healthy_monitor_count": 0
+                "healthy_monitor_count": 0,
             }
             mock_client.get_dns_zone_metrics.return_value = {"items": []}
             mock_client.get_dns_lb_health_status.return_value = {"items": []}
@@ -64,12 +62,7 @@ class TestMetricsServerIntegration:
         """Test complete metrics server with real HTTP endpoint."""
         # Override quota response with specific test data
         mock_f5xc_client.get_quota_usage.return_value = {
-            "quota_usage": {
-                "load_balancer": {
-                    "limit": {"maximum": 10},
-                    "usage": {"current": 5}
-                }
-            }
+            "quota_usage": {"load_balancer": {"limit": {"maximum": 10}, "usage": {"current": 5}}}
         }
 
         # Create and start metrics server
@@ -102,20 +95,20 @@ class TestMetricsServerIntegration:
             assert len(metrics_text) > 0
 
             # Verify specific metrics are present
-            assert 'f5xc_quota_limit' in metrics_text
-            assert 'f5xc_quota_current' in metrics_text
-            assert 'f5xc_quota_utilization' in metrics_text
-            assert 'f5xc_quota_collection_success' in metrics_text
+            assert "f5xc_quota_limit" in metrics_text
+            assert "f5xc_quota_current" in metrics_text
+            assert "f5xc_quota_utilization" in metrics_text
+            assert "f5xc_quota_collection_success" in metrics_text
 
             # Verify LB metrics registration
-            assert 'f5xc_http_lb_request_rate' in metrics_text
+            assert "f5xc_http_lb_request_rate" in metrics_text
 
             # Verify security collection success metrics
-            assert 'f5xc_security_collection_success' in metrics_text
-            assert 'f5xc_synthetic_collection_success' in metrics_text
+            assert "f5xc_security_collection_success" in metrics_text
+            assert "f5xc_synthetic_collection_success" in metrics_text
 
             # Verify Content-Type header
-            assert 'text/plain' in metrics_response.headers.get('Content-Type', '')
+            assert "text/plain" in metrics_response.headers.get("Content-Type", "")
 
         finally:
             # Clean up
@@ -144,11 +137,11 @@ class TestMetricsServerIntegration:
         assert metrics_output is not None
 
         # Should contain metric metadata even without data
-        metrics_str = metrics_output.decode('utf-8')
-        assert 'f5xc_quota_limit' in metrics_str
-        assert 'f5xc_http_lb_request_rate' in metrics_str
-        assert 'f5xc_security_collection_success' in metrics_str
-        assert 'f5xc_synthetic_collection_success' in metrics_str
+        metrics_str = metrics_output.decode("utf-8")
+        assert "f5xc_quota_limit" in metrics_str
+        assert "f5xc_http_lb_request_rate" in metrics_str
+        assert "f5xc_security_collection_success" in metrics_str
+        assert "f5xc_synthetic_collection_success" in metrics_str
 
     def test_metrics_endpoint_error_handling(self, test_config, mock_f5xc_client):
         """Test metrics endpoint handles registry errors gracefully."""

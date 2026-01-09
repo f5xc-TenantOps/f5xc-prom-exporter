@@ -29,7 +29,7 @@ def test_config():
 @pytest.fixture
 def mock_client(test_config):
     """Mock F5XC client fixture."""
-    with patch('f5xc_exporter.client.requests.Session'):
+    with patch("f5xc_exporter.client.requests.Session"):
         client = F5XCClient(test_config)
 
         # Mock all client methods (both old and new names for compatibility)
@@ -74,42 +74,96 @@ def sample_unified_lb_response():
                         "namespace": "prod",
                         "vhost": "app-frontend",
                         "site": "ce-site-1",
-                        "virtual_host_type": "HTTP_LOAD_BALANCER"
+                        "virtual_host_type": "HTTP_LOAD_BALANCER",
                     },
                     "data": {
                         "metric": {
                             "downstream": [
-                                {"type": "HTTP_REQUEST_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 150.5}]}},
-                                {"type": "HTTP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 2.5}]}},
-                                {"type": "HTTP_RESPONSE_LATENCY", "value": {"raw": [{"timestamp": 1234567890, "value": 0.025}]}},
-                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 1000000}]}},
+                                {
+                                    "type": "HTTP_REQUEST_RATE",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 150.5}]},
+                                },
+                                {
+                                    "type": "HTTP_ERROR_RATE",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 2.5}]},
+                                },
+                                {
+                                    "type": "HTTP_RESPONSE_LATENCY",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.025}]},
+                                },
+                                {
+                                    "type": "REQUEST_THROUGHPUT",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 1000000}]},
+                                },
                                 {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.010}]}},
                             ],
                             "upstream": [
-                                {"type": "HTTP_REQUEST_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 120.0}]}},
-                                {"type": "HTTP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 1.0}]}},
-                                {"type": "HTTP_RESPONSE_LATENCY", "value": {"raw": [{"timestamp": 1234567890, "value": 0.050}]}},
-                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 800000}]}},
+                                {
+                                    "type": "HTTP_REQUEST_RATE",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 120.0}]},
+                                },
+                                {
+                                    "type": "HTTP_ERROR_RATE",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 1.0}]},
+                                },
+                                {
+                                    "type": "HTTP_RESPONSE_LATENCY",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.050}]},
+                                },
+                                {
+                                    "type": "REQUEST_THROUGHPUT",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 800000}]},
+                                },
                                 {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.015}]}},
-                            ]
+                            ],
                         },
                         "healthscore": {
                             "downstream": [
-                                {"type": "HEALTHSCORE_OVERALL", "value": {"raw": [{"timestamp": 1234567890, "value": 95.0}]}},
-                                {"type": "HEALTHSCORE_CONNECTIVITY", "value": {"raw": [{"timestamp": 1234567890, "value": 98.0}]}},
-                                {"type": "HEALTHSCORE_PERFORMANCE", "value": {"raw": [{"timestamp": 1234567890, "value": 92.0}]}},
-                                {"type": "HEALTHSCORE_SECURITY", "value": {"raw": [{"timestamp": 1234567890, "value": 100.0}]}},
-                                {"type": "HEALTHSCORE_RELIABILITY", "value": {"raw": [{"timestamp": 1234567890, "value": 94.0}]}},
+                                {
+                                    "type": "HEALTHSCORE_OVERALL",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 95.0}]},
+                                },
+                                {
+                                    "type": "HEALTHSCORE_CONNECTIVITY",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 98.0}]},
+                                },
+                                {
+                                    "type": "HEALTHSCORE_PERFORMANCE",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 92.0}]},
+                                },
+                                {
+                                    "type": "HEALTHSCORE_SECURITY",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 100.0}]},
+                                },
+                                {
+                                    "type": "HEALTHSCORE_RELIABILITY",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 94.0}]},
+                                },
                             ],
                             "upstream": [
-                                {"type": "HEALTHSCORE_OVERALL", "value": {"raw": [{"timestamp": 1234567890, "value": 90.0}]}},
-                                {"type": "HEALTHSCORE_CONNECTIVITY", "value": {"raw": [{"timestamp": 1234567890, "value": 95.0}]}},
-                                {"type": "HEALTHSCORE_PERFORMANCE", "value": {"raw": [{"timestamp": 1234567890, "value": 85.0}]}},
-                                {"type": "HEALTHSCORE_SECURITY", "value": {"raw": [{"timestamp": 1234567890, "value": 100.0}]}},
-                                {"type": "HEALTHSCORE_RELIABILITY", "value": {"raw": [{"timestamp": 1234567890, "value": 88.0}]}},
-                            ]
-                        }
-                    }
+                                {
+                                    "type": "HEALTHSCORE_OVERALL",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 90.0}]},
+                                },
+                                {
+                                    "type": "HEALTHSCORE_CONNECTIVITY",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 95.0}]},
+                                },
+                                {
+                                    "type": "HEALTHSCORE_PERFORMANCE",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 85.0}]},
+                                },
+                                {
+                                    "type": "HEALTHSCORE_SECURITY",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 100.0}]},
+                                },
+                                {
+                                    "type": "HEALTHSCORE_RELIABILITY",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 88.0}]},
+                                },
+                            ],
+                        },
+                    },
                 },
                 # TCP LB
                 {
@@ -117,24 +171,36 @@ def sample_unified_lb_response():
                         "namespace": "prod",
                         "vhost": "tcp-backend",
                         "site": "ce-site-1",
-                        "virtual_host_type": "TCP_LOAD_BALANCER"
+                        "virtual_host_type": "TCP_LOAD_BALANCER",
                     },
                     "data": {
                         "metric": {
                             "downstream": [
-                                {"type": "TCP_CONNECTION_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 50.0}]}},
+                                {
+                                    "type": "TCP_CONNECTION_RATE",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 50.0}]},
+                                },
                                 {"type": "TCP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 1.5}]}},
-                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 500000}]}},
+                                {
+                                    "type": "REQUEST_THROUGHPUT",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 500000}]},
+                                },
                                 {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.008}]}},
                             ],
                             "upstream": [
-                                {"type": "TCP_CONNECTION_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 45.0}]}},
+                                {
+                                    "type": "TCP_CONNECTION_RATE",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 45.0}]},
+                                },
                                 {"type": "TCP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 0.5}]}},
-                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 450000}]}},
+                                {
+                                    "type": "REQUEST_THROUGHPUT",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 450000}]},
+                                },
                                 {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.012}]}},
-                            ]
+                            ],
                         }
-                    }
+                    },
                 },
                 # UDP LB
                 {
@@ -142,25 +208,37 @@ def sample_unified_lb_response():
                         "namespace": "prod",
                         "vhost": "udp-dns-lb",
                         "site": "ce-site-1",
-                        "virtual_host_type": "UDP_LOAD_BALANCER"
+                        "virtual_host_type": "UDP_LOAD_BALANCER",
                     },
                     "data": {
                         "metric": {
                             "downstream": [
-                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 100000}]}},
-                                {"type": "RESPONSE_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 200000}]}},
+                                {
+                                    "type": "REQUEST_THROUGHPUT",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 100000}]},
+                                },
+                                {
+                                    "type": "RESPONSE_THROUGHPUT",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 200000}]},
+                                },
                                 {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.005}]}},
                             ],
                             "upstream": [
-                                {"type": "REQUEST_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 95000}]}},
-                                {"type": "RESPONSE_THROUGHPUT", "value": {"raw": [{"timestamp": 1234567890, "value": 190000}]}},
+                                {
+                                    "type": "REQUEST_THROUGHPUT",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 95000}]},
+                                },
+                                {
+                                    "type": "RESPONSE_THROUGHPUT",
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 190000}]},
+                                },
                                 {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.008}]}},
-                            ]
+                            ],
                         }
-                    }
-                }
+                    },
+                },
             ],
-            "edges": []
+            "edges": [],
         }
     }
 
@@ -170,21 +248,10 @@ def sample_quota_response():
     """Sample quota API response."""
     return {
         "quota_usage": {
-            "load_balancer": {
-                "limit": {"maximum": 10},
-                "usage": {"current": 5}
-            },
-            "origin_pool": {
-                "limit": {"maximum": 20},
-                "usage": {"current": 12}
-            }
+            "load_balancer": {"limit": {"maximum": 10}, "usage": {"current": 5}},
+            "origin_pool": {"limit": {"maximum": 20}, "usage": {"current": 12}},
         },
-        "resources": {
-            "virtual_host": {
-                "limit": {"maximum": 50},
-                "usage": {"current": 25}
-            }
-        }
+        "resources": {"virtual_host": {"limit": {"maximum": 50}, "usage": {"current": 25}}},
     }
 
 
@@ -195,12 +262,7 @@ def sample_service_graph_response():
         "data": {
             "nodes": [
                 {
-                    "id": {
-                        "namespace": "system",
-                        "service": "test-service",
-                        "vhost": "test-lb",
-                        "site": "ce01"
-                    },
+                    "id": {"namespace": "system", "service": "test-service", "vhost": "test-lb", "site": "ce01"},
                     "data": {
                         "healthscore": {},
                         "metric": {
@@ -208,34 +270,28 @@ def sample_service_graph_response():
                                 {
                                     "type": "HTTP_REQUEST_RATE",
                                     "unit": "per second",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 100.5}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 100.5}]},
                                 },
                                 {
                                     "type": "HTTP_RESPONSE_LATENCY",
                                     "unit": "seconds",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.15}]
-                                    }
-                                }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.15}]},
+                                },
                             ],
                             "upstream": [
                                 {
                                     "type": "HTTP_REQUEST_RATE",
                                     "unit": "per second",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 95.0}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 95.0}]},
                                 }
-                            ]
-                        }
-                    }
+                            ],
+                        },
+                    },
                 }
             ],
-            "edges": []
+            "edges": [],
         },
-        "step": "1m"
+        "step": "1m",
     }
 
 
@@ -245,7 +301,7 @@ def sample_security_response():
     return {
         "metrics": [
             {"vhost_name": "test-app", "attack_type": "sql_injection", "count": 15},
-            {"vhost_name": "test-app", "attack_type": "xss", "count": 10}
+            {"vhost_name": "test-app", "attack_type": "xss", "count": 10},
         ]
     }
 
@@ -260,33 +316,33 @@ def sample_app_firewall_metrics_response():
                 "data": [
                     {
                         "key": {"VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"},
-                        "value": [{"timestamp": 1765738201, "value": "13442"}]
+                        "value": [{"timestamp": 1765738201, "value": "13442"}],
                     }
                 ],
-                "unit": "UNIT_COUNT"
+                "unit": "UNIT_COUNT",
             },
             {
                 "type": "ATTACKED_REQUESTS",
                 "data": [
                     {
                         "key": {"VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"},
-                        "value": [{"timestamp": 1765738201, "value": "25"}]
+                        "value": [{"timestamp": 1765738201, "value": "25"}],
                     }
                 ],
-                "unit": "UNIT_COUNT"
+                "unit": "UNIT_COUNT",
             },
             {
                 "type": "BOT_DETECTION",
                 "data": [
                     {
                         "key": {"VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"},
-                        "value": [{"timestamp": 1765738201, "value": "18"}]
+                        "value": [{"timestamp": 1765738201, "value": "18"}],
                     }
                 ],
-                "unit": "UNIT_COUNT"
-            }
+                "unit": "UNIT_COUNT",
+            },
         ],
-        "step": "5m"
+        "step": "5m",
     }
 
 
@@ -308,11 +364,11 @@ def sample_security_events_aggregation_response():
                         {"key": "svc_policy_sec_event", "count": "2"},
                         {"key": "malicious_user_sec_event", "count": "3"},
                         {"key": "ddos_sec_event", "count": "4"},
-                        {"key": "dos_sec_event", "count": "3"}
+                        {"key": "dos_sec_event", "count": "3"},
                     ]
                 }
             }
-        }
+        },
     }
 
 
@@ -323,29 +379,21 @@ def sample_firewall_logs_response():
         "total": 25,
         "events": [
             {"vhost": "test-app", "type": "block", "severity": "high"},
-            {"vhost": "test-app", "type": "alert", "severity": "medium"}
-        ]
+            {"vhost": "test-app", "type": "alert", "severity": "medium"},
+        ],
     }
 
 
 @pytest.fixture
 def sample_synthetic_http_summary_response():
     """Sample synthetic monitoring HTTP summary response from global-summary?monitorType=http."""
-    return {
-        "critical_monitor_count": 0,
-        "number_of_monitors": 2,
-        "healthy_monitor_count": 2
-    }
+    return {"critical_monitor_count": 0, "number_of_monitors": 2, "healthy_monitor_count": 2}
 
 
 @pytest.fixture
 def sample_synthetic_dns_summary_response():
     """Sample synthetic monitoring DNS summary response from global-summary?monitorType=dns."""
-    return {
-        "critical_monitor_count": 1,
-        "number_of_monitors": 3,
-        "healthy_monitor_count": 2
-    }
+    return {"critical_monitor_count": 1, "number_of_monitors": 3, "healthy_monitor_count": 2}
 
 
 @pytest.fixture
@@ -359,121 +407,85 @@ def sample_http_lb_response():
                         "namespace": "prod",
                         "vhost": "app-frontend",
                         "site": "ce-site-1",
-                        "virtual_host_type": "HTTP_LOAD_BALANCER"
+                        "virtual_host_type": "HTTP_LOAD_BALANCER",
                     },
                     "data": {
                         "metric": {
                             "downstream": [
                                 {
                                     "type": "HTTP_REQUEST_RATE",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 150.5}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 150.5}]},
                                 },
                                 {
                                     "type": "HTTP_ERROR_RATE",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 2.5}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 2.5}]},
                                 },
                                 {
                                     "type": "HTTP_ERROR_RATE_4XX",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 1.5}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 1.5}]},
                                 },
                                 {
                                     "type": "HTTP_ERROR_RATE_5XX",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 1.0}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 1.0}]},
                                 },
                                 {
                                     "type": "HTTP_RESPONSE_LATENCY",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.025}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.025}]},
                                 },
                                 {
                                     "type": "HTTP_RESPONSE_LATENCY_PERCENTILE_50",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.020}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.020}]},
                                 },
                                 {
                                     "type": "HTTP_RESPONSE_LATENCY_PERCENTILE_90",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.050}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.050}]},
                                 },
                                 {
                                     "type": "HTTP_RESPONSE_LATENCY_PERCENTILE_99",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.100}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.100}]},
                                 },
                                 {
                                     "type": "HTTP_APP_LATENCY",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.015}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.015}]},
                                 },
                                 {
                                     "type": "REQUEST_THROUGHPUT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 1000000}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 1000000}]},
                                 },
                                 {
                                     "type": "RESPONSE_THROUGHPUT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 5000000}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 5000000}]},
                                 },
-                                {
-                                    "type": "CLIENT_RTT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.010}]
-                                    }
-                                },
-                                {
-                                    "type": "SERVER_RTT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.005}]
-                                    }
-                                }
+                                {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.010}]}},
+                                {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.005}]}},
                             ]
                         }
-                    }
+                    },
                 },
                 {
                     "id": {
                         "namespace": "staging",
                         "vhost": "api-gateway",
                         "site": "ce-site-2",
-                        "virtual_host_type": "HTTP_LOAD_BALANCER"
+                        "virtual_host_type": "HTTP_LOAD_BALANCER",
                     },
                     "data": {
                         "metric": {
                             "downstream": [
                                 {
                                     "type": "HTTP_REQUEST_RATE",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 50.0}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 50.0}]},
                                 },
                                 {
                                     "type": "HTTP_RESPONSE_LATENCY",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.030}]
-                                    }
-                                }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.030}]},
+                                },
                             ]
                         }
-                    }
-                }
+                    },
+                },
             ],
-            "edges": []
+            "edges": [],
         }
     }
 
@@ -489,71 +501,44 @@ def sample_tcp_lb_response():
                         "namespace": "prod",
                         "vhost": "tcp-backend",
                         "site": "ce-site-1",
-                        "virtual_host_type": "TCP_LOAD_BALANCER"
+                        "virtual_host_type": "TCP_LOAD_BALANCER",
                     },
                     "data": {
                         "metric": {
                             "downstream": [
                                 {
                                     "type": "TCP_CONNECTION_RATE",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 50.0}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 50.0}]},
                                 },
-                                {
-                                    "type": "TCP_ERROR_RATE",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 1.5}]
-                                    }
-                                },
+                                {"type": "TCP_ERROR_RATE", "value": {"raw": [{"timestamp": 1234567890, "value": 1.5}]}},
                                 {
                                     "type": "TCP_ERROR_RATE_CLIENT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.5}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 0.5}]},
                                 },
                                 {
                                     "type": "TCP_ERROR_RATE_UPSTREAM",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 1.0}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 1.0}]},
                                 },
                                 {
                                     "type": "TCP_CONNECTION_DURATION",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 30.5}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 30.5}]},
                                 },
                                 {
                                     "type": "REQUEST_THROUGHPUT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 500000}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 500000}]},
                                 },
                                 {
                                     "type": "RESPONSE_THROUGHPUT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 2000000}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 2000000}]},
                                 },
-                                {
-                                    "type": "CLIENT_RTT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.008}]
-                                    }
-                                },
-                                {
-                                    "type": "SERVER_RTT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.003}]
-                                    }
-                                }
+                                {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.008}]}},
+                                {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.003}]}},
                             ]
                         }
-                    }
+                    },
                 }
             ],
-            "edges": []
+            "edges": [],
         }
     }
 
@@ -569,41 +554,27 @@ def sample_udp_lb_response():
                         "namespace": "prod",
                         "vhost": "udp-dns-lb",
                         "site": "ce-site-1",
-                        "virtual_host_type": "UDP_LOAD_BALANCER"
+                        "virtual_host_type": "UDP_LOAD_BALANCER",
                     },
                     "data": {
                         "metric": {
                             "downstream": [
                                 {
                                     "type": "REQUEST_THROUGHPUT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 100000}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 100000}]},
                                 },
                                 {
                                     "type": "RESPONSE_THROUGHPUT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 200000}]
-                                    }
+                                    "value": {"raw": [{"timestamp": 1234567890, "value": 200000}]},
                                 },
-                                {
-                                    "type": "CLIENT_RTT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.005}]
-                                    }
-                                },
-                                {
-                                    "type": "SERVER_RTT",
-                                    "value": {
-                                        "raw": [{"timestamp": 1234567890, "value": 0.002}]
-                                    }
-                                }
+                                {"type": "CLIENT_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.005}]}},
+                                {"type": "SERVER_RTT", "value": {"raw": [{"timestamp": 1234567890, "value": 0.002}]}},
                             ]
                         }
-                    }
+                    },
                 }
             ],
-            "edges": []
+            "edges": [],
         }
     }
 
@@ -631,6 +602,7 @@ def clean_env():
 
     # Clean up Prometheus registry to avoid conflicts
     from prometheus_client import REGISTRY
+
     try:
         # Clear all collectors from the default registry
         collectors = list(REGISTRY._collector_to_names.keys())
@@ -669,21 +641,12 @@ def sample_dns_zone_metrics_response():
     """
     return {
         "data": [
-            {
-                "labels": {"DNS_ZONE_NAME": "example.com"},
-                "value": [{"timestamp": 1765850829, "value": "21833"}]
-            },
-            {
-                "labels": {"DNS_ZONE_NAME": "mysite.net"},
-                "value": [{"timestamp": 1765850829, "value": "15093"}]
-            },
-            {
-                "labels": {"DNS_ZONE_NAME": "test.org"},
-                "value": [{"timestamp": 1765850829, "value": "1049"}]
-            }
+            {"labels": {"DNS_ZONE_NAME": "example.com"}, "value": [{"timestamp": 1765850829, "value": "21833"}]},
+            {"labels": {"DNS_ZONE_NAME": "mysite.net"}, "value": [{"timestamp": 1765850829, "value": "15093"}]},
+            {"labels": {"DNS_ZONE_NAME": "test.org"}, "value": [{"timestamp": 1765850829, "value": "1049"}]},
         ],
         "step": "1440m",
-        "total_hits": "3"
+        "total_hits": "3",
     }
 
 
@@ -692,18 +655,10 @@ def sample_dns_lb_health_response():
     """Sample DNS LB health status response from /api/data/namespaces/system/dns_load_balancers/health_status."""
     return {
         "items": [
-            {
-                "name": "global-dns-lb",
-                "namespace": "system",
-                "health_status": "HEALTHY"
-            },
-            {
-                "name": "regional-dns-lb",
-                "namespace": "system",
-                "health_status": "UNHEALTHY"
-            }
+            {"name": "global-dns-lb", "namespace": "system", "health_status": "HEALTHY"},
+            {"name": "regional-dns-lb", "namespace": "system", "health_status": "UNHEALTHY"},
         ],
-        "dns_lb_pools_status_summary": []
+        "dns_lb_pools_status_summary": [],
     }
 
 
@@ -716,19 +671,19 @@ def sample_dns_lb_pool_member_health_response():
                 "dns_lb_name": "global-dns-lb",
                 "pool_name": "primary-pool",
                 "member_address": "10.0.0.1",
-                "health_status": "HEALTHY"
+                "health_status": "HEALTHY",
             },
             {
                 "dns_lb_name": "global-dns-lb",
                 "pool_name": "primary-pool",
                 "member_address": "10.0.0.2",
-                "health_status": "HEALTHY"
+                "health_status": "HEALTHY",
             },
             {
                 "dns_lb_name": "regional-dns-lb",
                 "pool_name": "backup-pool",
                 "member_address": "10.1.0.1",
-                "health_status": "UNHEALTHY"
-            }
+                "health_status": "UNHEALTHY",
+            },
         ]
     }
