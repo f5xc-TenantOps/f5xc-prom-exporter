@@ -29,10 +29,12 @@ When limits are exceeded:
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `F5XC_MAX_NAMESPACES` | 100 | Maximum number of namespaces to track |
-| `F5XC_MAX_LOAD_BALANCERS_PER_NAMESPACE` | 50 | Maximum load balancers per namespace |
-| `F5XC_MAX_DNS_ZONES` | 100 | Maximum number of DNS zones to track |
-| `F5XC_WARN_CARDINALITY_THRESHOLD` | 10000 | Log warning when metric cardinality exceeds this value |
+| `F5XC_MAX_NAMESPACES` | 100 | Maximum number of namespaces to track (0 = unlimited) |
+| `F5XC_MAX_LOAD_BALANCERS_PER_NAMESPACE` | 50 | Maximum load balancers per namespace (0 = unlimited) |
+| `F5XC_MAX_DNS_ZONES` | 100 | Maximum number of DNS zones to track (0 = unlimited) |
+| `F5XC_WARN_CARDINALITY_THRESHOLD` | 10000 | Log warning when metric cardinality exceeds this value (0 = disabled) |
+
+**Note**: Setting any limit to `0` disables that limit, allowing unlimited tracking. Use with caution as this can lead to high cardinality and Prometheus performance issues.
 
 ## Metrics
 
@@ -73,9 +75,9 @@ export F5XC_WARN_CARDINALITY_THRESHOLD=20000
 ### Unlimited Tracking
 Disable limits (not recommended for production):
 ```bash
-export F5XC_MAX_NAMESPACES=999999
-export F5XC_MAX_LOAD_BALANCERS_PER_NAMESPACE=999999
-export F5XC_MAX_DNS_ZONES=999999
+export F5XC_MAX_NAMESPACES=0
+export F5XC_MAX_LOAD_BALANCERS_PER_NAMESPACE=0
+export F5XC_MAX_DNS_ZONES=0
 ```
 
 ## Monitoring Cardinality

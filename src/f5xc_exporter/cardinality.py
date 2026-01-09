@@ -26,10 +26,10 @@ class CardinalityTracker:
         """Initialize cardinality tracker.
 
         Args:
-            max_namespaces: Maximum number of namespaces to track
-            max_load_balancers_per_namespace: Maximum LBs per namespace
-            max_dns_zones: Maximum number of DNS zones to track
-            warn_cardinality_threshold: Warn when total cardinality exceeds this
+            max_namespaces: Maximum number of namespaces to track (0 = unlimited)
+            max_load_balancers_per_namespace: Maximum LBs per namespace (0 = unlimited)
+            max_dns_zones: Maximum number of DNS zones to track (0 = unlimited)
+            warn_cardinality_threshold: Warn when total cardinality exceeds this (0 = no warning)
         """
         self.max_namespaces = max_namespaces
         self.max_load_balancers_per_namespace = max_load_balancers_per_namespace
@@ -93,7 +93,8 @@ class CardinalityTracker:
         if namespace in self.tracked_namespaces:
             return True
 
-        if len(self.tracked_namespaces) >= self.max_namespaces:
+        # 0 means unlimited
+        if self.max_namespaces > 0 and len(self.tracked_namespaces) >= self.max_namespaces:
             self.limits_exceeded[f"{collector}_namespace"] += 1
             self.cardinality_limit_exceeded.labels(collector=collector, limit_type="namespace").set(
                 self.limits_exceeded[f"{collector}_namespace"]
@@ -126,7 +127,11 @@ class CardinalityTracker:
         if load_balancer in self.tracked_load_balancers[namespace]:
             return True
 
-        if len(self.tracked_load_balancers[namespace]) >= self.max_load_balancers_per_namespace:
+        # 0 means unlimited
+        if (
+            self.max_load_balancers_per_namespace > 0
+            and len(self.tracked_load_balancers[namespace]) >= self.max_load_balancers_per_namespace
+        ):
             self.limits_exceeded[f"{collector}_load_balancer"] += 1
             self.cardinality_limit_exceeded.labels(collector=collector, limit_type="load_balancer").set(
                 self.limits_exceeded[f"{collector}_load_balancer"]
@@ -161,7 +166,8 @@ class CardinalityTracker:
         if zone in self.tracked_dns_zones:
             return True
 
-        if len(self.tracked_dns_zones) >= self.max_dns_zones:
+        # 0 means unlimited
+        if self.max_dns_zones > 0 and len(self.tracked_dns_zones) >= self.max_dns_zones:
             self.limits_exceeded[f"{collector}_dns_zone"] += 1
             self.cardinality_limit_exceeded.labels(collector=collector, limit_type="dns_zone").set(
                 self.limits_exceeded[f"{collector}_dns_zone"]
@@ -198,8 +204,8 @@ class CardinalityTracker:
         )
         self.cardinality_per_collector[collector] = collector_total
 
-        # Check warning threshold
-        if cardinality > self.warn_cardinality_threshold:
+        # Check warning threshold (0 means no warning)
+        if self.warn_cardinality_threshold > 0 and cardinality > self.warn_cardinality_threshold:
             logger.warning(
                 "Metric cardinality exceeds warning threshold",
                 collector=collector,

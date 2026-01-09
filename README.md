@@ -95,10 +95,10 @@ See [docs/CARDINALITY.md](docs/CARDINALITY.md) for detailed documentation.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `F5XC_MAX_NAMESPACES` | 100 | Maximum namespaces to track |
-| `F5XC_MAX_LOAD_BALANCERS_PER_NAMESPACE` | 50 | Maximum load balancers per namespace |
-| `F5XC_MAX_DNS_ZONES` | 100 | Maximum DNS zones to track |
-| `F5XC_WARN_CARDINALITY_THRESHOLD` | 10000 | Log warning when cardinality exceeds value |
+| `F5XC_MAX_NAMESPACES` | 100 | Maximum namespaces to track (0 = unlimited) |
+| `F5XC_MAX_LOAD_BALANCERS_PER_NAMESPACE` | 50 | Maximum load balancers per namespace (0 = unlimited) |
+| `F5XC_MAX_DNS_ZONES` | 100 | Maximum DNS zones to track (0 = unlimited) |
+| `F5XC_WARN_CARDINALITY_THRESHOLD` | 10000 | Log warning when cardinality exceeds value (0 = disabled) |
 
 ### Example Configurations
 
@@ -128,6 +128,14 @@ export F5XC_DNS_INTERVAL=60
 export F5XC_MAX_NAMESPACES=200
 export F5XC_MAX_LOAD_BALANCERS_PER_NAMESPACE=100
 export F5XC_MAX_DNS_ZONES=200
+```
+
+**Unlimited tracking**:
+```bash
+# Disable cardinality limits (use with caution)
+export F5XC_MAX_NAMESPACES=0
+export F5XC_MAX_LOAD_BALANCERS_PER_NAMESPACE=0
+export F5XC_MAX_DNS_ZONES=0
 ```
 
 ## Prometheus Configuration
