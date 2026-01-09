@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
+from prometheus_client import Gauge
 
 from f5xc_exporter.config import Config
 from f5xc_exporter.metrics_server import MetricsServer
@@ -55,6 +56,18 @@ class TestMetricsServerIntegration:
             mock_client.get_dns_zone_metrics.return_value = {"items": []}
             mock_client.get_dns_lb_health_status.return_value = {"items": []}
             mock_client.get_dns_lb_pool_member_health.return_value = {"items": []}
+
+            # Circuit breaker metrics
+            mock_client.circuit_breaker_state_metric = Gauge(
+                'test_f5xc_circuit_breaker_state',
+                'Test circuit breaker state',
+                ['endpoint']
+            )
+            mock_client.circuit_breaker_failures_metric = Gauge(
+                'test_f5xc_circuit_breaker_failures',
+                'Test circuit breaker failures',
+                ['endpoint']
+            )
 
             yield mock_client
 

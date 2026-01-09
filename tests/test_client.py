@@ -1,14 +1,18 @@
 """Tests for F5XC API client."""
 
 import json
+import time
 from unittest.mock import Mock
 
 import pytest
 import responses
 
 from f5xc_exporter.client import (
+    CircuitBreaker,
+    CircuitBreakerState,
     F5XCAPIError,
     F5XCAuthenticationError,
+    F5XCCircuitBreakerOpenError,
     F5XCClient,
     F5XCRateLimitError,
 )
@@ -486,3 +490,265 @@ class TestF5XCClient:
         assert result == {"ok": True}
         # Should not have double slashes
         assert "//api" not in responses.calls[0].request.url
+
+
+class TestCircuitBreaker:
+    """Test circuit breaker functionality."""
+
+    def test_initial_state_is_closed(self):
+        """Test circuit breaker starts in CLOSED state."""
+        cb = CircuitBreaker(failure_threshold=3, timeout_seconds=60, success_threshold=2)
+
+        assert cb.is_call_allowed("/api/test")
+        assert cb.get_state_value("/api/test") == CircuitBreakerState.CLOSED.value
+        assert cb.get_failure_count("/api/test") == 0
+
+    def test_transitions_to_open_after_threshold_failures(self):
+        """Test circuit opens after reaching failure threshold."""
+        cb = CircuitBreaker(failure_threshold=3, timeout_seconds=60, success_threshold=2)
+        endpoint = "/api/test"
+
+        # Record 2 failures - should stay CLOSED
+        cb.record_failure(endpoint)
+        cb.record_failure(endpoint)
+        assert cb.is_call_allowed(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
+
+        # 3rd failure - should transition to OPEN
+        cb.record_failure(endpoint)
+        assert not cb.is_call_allowed(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+        assert cb.get_failure_count(endpoint) == 3
+
+    def test_open_circuit_rejects_calls(self):
+        """Test OPEN circuit rejects all calls."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=60, success_threshold=2)
+        endpoint = "/api/test"
+
+        # Open the circuit
+        cb.record_failure(endpoint)
+        cb.record_failure(endpoint)
+
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+        assert not cb.is_call_allowed(endpoint)
+
+    def test_transitions_to_half_open_after_timeout(self):
+        """Test circuit transitions to HALF_OPEN after timeout."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=1, success_threshold=2)
+        endpoint = "/api/test"
+
+        # Open the circuit
+        cb.record_failure(endpoint)
+        cb.record_failure(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+
+        # Wait for timeout
+        time.sleep(1.1)
+
+        # Should transition to HALF_OPEN and allow call
+        assert cb.is_call_allowed(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+    def test_half_open_closes_after_success_threshold(self):
+        """Test circuit closes after success threshold in HALF_OPEN."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=1, success_threshold=2)
+        endpoint = "/api/test"
+
+        # Open the circuit
+        cb.record_failure(endpoint)
+        cb.record_failure(endpoint)
+
+        # Wait and transition to HALF_OPEN
+        time.sleep(1.1)
+        assert cb.is_call_allowed(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+        # First success - should stay HALF_OPEN
+        cb.record_success(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+        # Second success - should close circuit
+        cb.record_success(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
+        assert cb.get_failure_count(endpoint) == 0
+
+    def test_half_open_reopens_on_failure(self):
+        """Test circuit reopens on failure in HALF_OPEN state."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=1, success_threshold=2)
+        endpoint = "/api/test"
+
+        # Open the circuit
+        cb.record_failure(endpoint)
+        cb.record_failure(endpoint)
+
+        # Wait and transition to HALF_OPEN
+        time.sleep(1.1)
+        assert cb.is_call_allowed(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+        # Failure in HALF_OPEN - should reopen
+        cb.record_failure(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+        assert not cb.is_call_allowed(endpoint)
+
+    def test_success_resets_failure_count_in_closed_state(self):
+        """Test success resets failure count in CLOSED state."""
+        cb = CircuitBreaker(failure_threshold=3, timeout_seconds=60, success_threshold=2)
+        endpoint = "/api/test"
+
+        # Record failures
+        cb.record_failure(endpoint)
+        cb.record_failure(endpoint)
+        assert cb.get_failure_count(endpoint) == 2
+
+        # Record success - should reset count
+        cb.record_success(endpoint)
+        assert cb.get_failure_count(endpoint) == 0
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
+
+    def test_multiple_endpoints_tracked_independently(self):
+        """Test different endpoints are tracked independently."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=60, success_threshold=2)
+        endpoint1 = "/api/test1"
+        endpoint2 = "/api/test2"
+
+        # Open circuit for endpoint1
+        cb.record_failure(endpoint1)
+        cb.record_failure(endpoint1)
+
+        assert cb.get_state_value(endpoint1) == CircuitBreakerState.OPEN.value
+        assert not cb.is_call_allowed(endpoint1)
+
+        # endpoint2 should still be CLOSED
+        assert cb.get_state_value(endpoint2) == CircuitBreakerState.CLOSED.value
+        assert cb.is_call_allowed(endpoint2)
+
+    def test_get_all_endpoints(self):
+        """Test getting all tracked endpoints."""
+        cb = CircuitBreaker(failure_threshold=3, timeout_seconds=60, success_threshold=2)
+
+        cb.record_failure("/api/test1")
+        cb.record_failure("/api/test2")
+        cb.record_failure("/api/test3")
+
+        endpoints = cb.get_all_endpoints()
+        assert "/api/test1" in endpoints
+        assert "/api/test2" in endpoints
+        assert "/api/test3" in endpoints
+
+
+class TestCircuitBreakerIntegration:
+    """Test circuit breaker integration with F5XCClient."""
+
+    def test_circuit_breaker_open_raises_exception(self, test_config):
+        """Test that open circuit breaker raises exception."""
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Manually open the circuit
+        client.circuit_breaker.record_failure(endpoint)
+        client.circuit_breaker.record_failure(endpoint)
+        client.circuit_breaker.record_failure(endpoint)
+        client.circuit_breaker.record_failure(endpoint)
+        client.circuit_breaker.record_failure(endpoint)
+
+        # Attempt to make request should raise circuit breaker exception
+        with pytest.raises(F5XCCircuitBreakerOpenError) as exc_info:
+            client.get(endpoint)
+
+        assert "Circuit breaker is open" in str(exc_info.value)
+
+    @responses.activate
+    def test_successful_request_records_success(self, test_config):
+        """Test successful request records success in circuit breaker."""
+        responses.add(
+            responses.GET,
+            "https://test.console.ves.volterra.io/api/test",
+            json={"status": "ok"},
+            status=200
+        )
+
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Make successful request
+        result = client.get(endpoint)
+
+        assert result == {"status": "ok"}
+        # Verify circuit breaker recorded success
+        assert client.circuit_breaker.get_failure_count(endpoint) == 0
+        assert client.circuit_breaker.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
+
+    def test_failed_request_records_failure(self, test_config):
+        """Test failed request records failure in circuit breaker."""
+        import requests.exceptions
+
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Mock session to raise connection error
+        client.session.request = Mock(side_effect=requests.exceptions.ConnectionError("Connection failed"))
+
+        # Attempt request
+        with pytest.raises(F5XCAPIError):
+            client.get(endpoint)
+
+        # Verify circuit breaker recorded failure
+        assert client.circuit_breaker.get_failure_count(endpoint) == 1
+
+    def test_rate_limit_records_failure(self, test_config):
+        """Test rate limit error records failure in circuit breaker."""
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Mock the session to return a 429 response
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_response.headers = {"Retry-After": "60"}
+        mock_response.json.return_value = {"error": "Too Many Requests"}
+
+        client.session.request = Mock(return_value=mock_response)
+
+        with pytest.raises(F5XCRateLimitError):
+            client.get(endpoint)
+
+        # Verify circuit breaker recorded failure
+        assert client.circuit_breaker.get_failure_count(endpoint) >= 1
+
+    def test_auth_error_does_not_record_failure(self, test_config):
+        """Test authentication error does not record circuit breaker failure."""
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Mock the session to return a 401 response
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.json.return_value = {"error": "Unauthorized"}
+
+        client.session.request = Mock(return_value=mock_response)
+
+        with pytest.raises(F5XCAuthenticationError):
+            client.get(endpoint)
+
+        # Auth errors should NOT record circuit breaker failure
+        assert client.circuit_breaker.get_failure_count(endpoint) == 0
+
+    @responses.activate
+    def test_circuit_breaker_metrics_updated(self, test_config):
+        """Test circuit breaker metrics are updated."""
+        responses.add(
+            responses.GET,
+            "https://test.console.ves.volterra.io/api/test",
+            json={"status": "ok"},
+            status=200
+        )
+
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Make successful request
+        client.get(endpoint)
+
+        # Verify metrics exist
+        assert client.circuit_breaker_state_metric is not None
+        assert client.circuit_breaker_failures_metric is not None

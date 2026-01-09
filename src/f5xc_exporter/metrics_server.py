@@ -269,6 +269,10 @@ class MetricsServer:
         self.registry.register(self.dns_collector.zone_count)
         self.registry.register(self.dns_collector.dns_lb_count)
 
+        # Circuit breaker metrics
+        self.registry.register(self.client.circuit_breaker_state_metric)
+        self.registry.register(self.client.circuit_breaker_failures_metric)
+
         # Cardinality tracker metrics
         self.registry.register(self.cardinality_tracker.metric_cardinality)
         self.registry.register(self.cardinality_tracker.cardinality_limit_exceeded)
