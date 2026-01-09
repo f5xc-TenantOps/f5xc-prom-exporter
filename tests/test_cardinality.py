@@ -1,5 +1,7 @@
 """Unit tests for cardinality tracker."""
 
+import logging
+
 import pytest
 from prometheus_client import REGISTRY
 
@@ -37,6 +39,18 @@ def tracker_unregistered():
     except Exception:
         pass
     return tracker
+
+
+def _cleanup_tracker(tracker: CardinalityTracker) -> None:
+    """Helper function to unregister tracker metrics from global registry."""
+    try:
+        REGISTRY.unregister(tracker.metric_cardinality)
+        REGISTRY.unregister(tracker.cardinality_limit_exceeded)
+        REGISTRY.unregister(tracker.total_tracked_namespaces)
+        REGISTRY.unregister(tracker.total_tracked_load_balancers)
+        REGISTRY.unregister(tracker.total_tracked_dns_zones)
+    except Exception:
+        pass  # Metrics may already be unregistered by other tests
 
 
 class TestCardinalityTracker:
@@ -254,15 +268,7 @@ class TestCardinalityUnlimitedTracking:
         assert len(tracker.tracked_namespaces) == 200
         assert "test_namespace" not in tracker.limits_exceeded
 
-        # Cleanup
-        try:
-            REGISTRY.unregister(tracker.metric_cardinality)
-            REGISTRY.unregister(tracker.cardinality_limit_exceeded)
-            REGISTRY.unregister(tracker.total_tracked_namespaces)
-            REGISTRY.unregister(tracker.total_tracked_load_balancers)
-            REGISTRY.unregister(tracker.total_tracked_dns_zones)
-        except Exception:
-            pass
+        _cleanup_tracker(tracker)
 
     def test_unlimited_load_balancers(self):
         """Test that setting max_load_balancers_per_namespace=0 allows unlimited tracking."""
@@ -275,15 +281,7 @@ class TestCardinalityUnlimitedTracking:
         assert len(tracker.tracked_load_balancers["ns1"]) == 100
         assert "test_load_balancer" not in tracker.limits_exceeded
 
-        # Cleanup
-        try:
-            REGISTRY.unregister(tracker.metric_cardinality)
-            REGISTRY.unregister(tracker.cardinality_limit_exceeded)
-            REGISTRY.unregister(tracker.total_tracked_namespaces)
-            REGISTRY.unregister(tracker.total_tracked_load_balancers)
-            REGISTRY.unregister(tracker.total_tracked_dns_zones)
-        except Exception:
-            pass
+        _cleanup_tracker(tracker)
 
     def test_unlimited_dns_zones(self):
         """Test that setting max_dns_zones=0 allows unlimited tracking."""
@@ -296,35 +294,21 @@ class TestCardinalityUnlimitedTracking:
         assert len(tracker.tracked_dns_zones) == 200
         assert "test_dns_zone" not in tracker.limits_exceeded
 
-        # Cleanup
-        try:
-            REGISTRY.unregister(tracker.metric_cardinality)
-            REGISTRY.unregister(tracker.cardinality_limit_exceeded)
-            REGISTRY.unregister(tracker.total_tracked_namespaces)
-            REGISTRY.unregister(tracker.total_tracked_load_balancers)
-            REGISTRY.unregister(tracker.total_tracked_dns_zones)
-        except Exception:
-            pass
+        _cleanup_tracker(tracker)
 
-    def test_unlimited_warning_threshold(self):
+    def test_unlimited_warning_threshold(self, caplog):
         """Test that setting warn_cardinality_threshold=0 disables warnings."""
         tracker = CardinalityTracker(warn_cardinality_threshold=0)
 
         # Should not log warnings even with high cardinality
-        tracker.update_metric_cardinality("collector1", "metric1", 100000)
+        with caplog.at_level(logging.WARNING):
+            tracker.update_metric_cardinality("collector1", "metric1", 100000)
 
-        # No easy way to verify warning wasn't logged, but at least verify it doesn't crash
+        # Verify no warning was logged
+        assert "cardinality exceeds" not in caplog.text
         assert tracker.cardinality_per_metric["collector1:metric1"] == 100000
 
-        # Cleanup
-        try:
-            REGISTRY.unregister(tracker.metric_cardinality)
-            REGISTRY.unregister(tracker.cardinality_limit_exceeded)
-            REGISTRY.unregister(tracker.total_tracked_namespaces)
-            REGISTRY.unregister(tracker.total_tracked_load_balancers)
-            REGISTRY.unregister(tracker.total_tracked_dns_zones)
-        except Exception:
-            pass
+        _cleanup_tracker(tracker)
 
     def test_mixed_limited_and_unlimited(self):
         """Test that some limits can be 0 while others are enforced."""
@@ -347,12 +331,28 @@ class TestCardinalityUnlimitedTracking:
         for i in range(10):
             assert tracker.check_dns_zone_limit(f"zone{i}.com", "test") is True
 
-        # Cleanup
-        try:
-            REGISTRY.unregister(tracker.metric_cardinality)
-            REGISTRY.unregister(tracker.cardinality_limit_exceeded)
-            REGISTRY.unregister(tracker.total_tracked_namespaces)
-            REGISTRY.unregister(tracker.total_tracked_load_balancers)
-            REGISTRY.unregister(tracker.total_tracked_dns_zones)
-        except Exception:
-            pass
+        _cleanup_tracker(tracker)
+
+
+class TestCardinalityNegativeValues:
+    """Tests for negative value handling."""
+
+    def test_negative_max_namespaces_raises_error(self):
+        """Test that negative max_namespaces raises ValueError."""
+        with pytest.raises(ValueError, match="max_namespaces must be >= 0"):
+            CardinalityTracker(max_namespaces=-1)
+
+    def test_negative_max_load_balancers_raises_error(self):
+        """Test that negative max_load_balancers_per_namespace raises ValueError."""
+        with pytest.raises(ValueError, match="max_load_balancers_per_namespace must be >= 0"):
+            CardinalityTracker(max_load_balancers_per_namespace=-1)
+
+    def test_negative_max_dns_zones_raises_error(self):
+        """Test that negative max_dns_zones raises ValueError."""
+        with pytest.raises(ValueError, match="max_dns_zones must be >= 0"):
+            CardinalityTracker(max_dns_zones=-1)
+
+    def test_negative_warn_threshold_raises_error(self):
+        """Test that negative warn_cardinality_threshold raises ValueError."""
+        with pytest.raises(ValueError, match="warn_cardinality_threshold must be >= 0"):
+            CardinalityTracker(warn_cardinality_threshold=-1)

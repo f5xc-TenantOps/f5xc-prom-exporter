@@ -30,7 +30,20 @@ class CardinalityTracker:
             max_load_balancers_per_namespace: Maximum LBs per namespace (0 = unlimited)
             max_dns_zones: Maximum number of DNS zones to track (0 = unlimited)
             warn_cardinality_threshold: Warn when total cardinality exceeds this (0 = no warning)
+
+        Raises:
+            ValueError: If any limit is negative
         """
+        # Validate that limits are non-negative
+        if max_namespaces < 0:
+            raise ValueError("max_namespaces must be >= 0 (0 = unlimited)")
+        if max_load_balancers_per_namespace < 0:
+            raise ValueError("max_load_balancers_per_namespace must be >= 0 (0 = unlimited)")
+        if max_dns_zones < 0:
+            raise ValueError("max_dns_zones must be >= 0 (0 = unlimited)")
+        if warn_cardinality_threshold < 0:
+            raise ValueError("warn_cardinality_threshold must be >= 0 (0 = disabled)")
+
         self.max_namespaces = max_namespaces
         self.max_load_balancers_per_namespace = max_load_balancers_per_namespace
         self.max_dns_zones = max_dns_zones
