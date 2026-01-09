@@ -1,5 +1,6 @@
 """F5 Distributed Cloud API client."""
 
+import threading
 import time
 from datetime import datetime, timedelta
 from enum import Enum
@@ -29,6 +30,8 @@ class CircuitBreaker:
 
     Tracks failures per endpoint and opens circuit when threshold is exceeded.
     After timeout, allows limited requests to test recovery (HALF_OPEN state).
+
+    Thread-safe: All state modifications are protected by an internal lock.
     """
 
     def __init__(
@@ -54,6 +57,9 @@ class CircuitBreaker:
         self._success_counts: dict[str, int] = {}
         self._last_failure_times: dict[str, float] = {}
 
+        # Thread safety lock
+        self._lock = threading.Lock()
+
     def _get_state(self, endpoint: str) -> CircuitBreakerState:
         """Get current state for endpoint."""
         return self._states.get(endpoint, CircuitBreakerState.CLOSED)
@@ -74,108 +80,134 @@ class CircuitBreaker:
     def is_call_allowed(self, endpoint: str) -> bool:
         """Check if call is allowed for endpoint.
 
+        Thread-safe: Uses internal lock to prevent race conditions during
+        state transitions from OPEN to HALF_OPEN.
+
         Returns:
             True if call should proceed, False if circuit is open
         """
-        state = self._get_state(endpoint)
+        with self._lock:
+            state = self._get_state(endpoint)
 
-        if state == CircuitBreakerState.CLOSED:
-            return True
-
-        if state == CircuitBreakerState.OPEN:
-            # Check if timeout has elapsed
-            last_failure = self._last_failure_times.get(endpoint, 0)
-            if time.time() - last_failure >= self.timeout_seconds:
-                # Transition to HALF_OPEN to test recovery
-                self._set_state(endpoint, CircuitBreakerState.HALF_OPEN)
-                self._success_counts[endpoint] = 0
-                logger.info(
-                    "Circuit breaker entering HALF_OPEN state",
-                    endpoint=endpoint,
-                    timeout_seconds=self.timeout_seconds
-                )
+            if state == CircuitBreakerState.CLOSED:
                 return True
-            else:
-                logger.debug(
-                    "Circuit breaker rejecting call",
-                    endpoint=endpoint,
-                    state="OPEN",
-                    seconds_until_retry=int(self.timeout_seconds - (time.time() - last_failure))
-                )
-                return False
 
-        if state == CircuitBreakerState.HALF_OPEN:
-            # Allow call in HALF_OPEN state
+            if state == CircuitBreakerState.OPEN:
+                # Check if timeout has elapsed
+                last_failure = self._last_failure_times.get(endpoint, 0)
+                if time.time() - last_failure >= self.timeout_seconds:
+                    # Transition to HALF_OPEN to test recovery
+                    self._set_state(endpoint, CircuitBreakerState.HALF_OPEN)
+                    self._success_counts[endpoint] = 0
+                    logger.info(
+                        "Circuit breaker entering HALF_OPEN state",
+                        endpoint=endpoint,
+                        timeout_seconds=self.timeout_seconds
+                    )
+                    return True
+                else:
+                    logger.debug(
+                        "Circuit breaker rejecting call",
+                        endpoint=endpoint,
+                        state="OPEN",
+                        seconds_until_retry=int(self.timeout_seconds - (time.time() - last_failure))
+                    )
+                    return False
+
+            if state == CircuitBreakerState.HALF_OPEN:
+                # Allow call in HALF_OPEN state
+                return True
+
             return True
-
-        return True
 
     def record_success(self, endpoint: str) -> None:
-        """Record successful call for endpoint."""
-        state = self._get_state(endpoint)
+        """Record successful call for endpoint.
 
-        if state == CircuitBreakerState.HALF_OPEN:
-            # Increment success count in HALF_OPEN state
-            self._success_counts[endpoint] = self._success_counts.get(endpoint, 0) + 1
+        Thread-safe: Uses internal lock to prevent race conditions.
+        """
+        with self._lock:
+            state = self._get_state(endpoint)
 
-            if self._success_counts[endpoint] >= self.success_threshold:
-                # Enough successes, close the circuit
-                self._set_state(endpoint, CircuitBreakerState.CLOSED)
-                self._failure_counts[endpoint] = 0
-                self._success_counts[endpoint] = 0
-                logger.info(
-                    "Circuit breaker closed after successful recovery",
-                    endpoint=endpoint,
-                    success_count=self._success_counts[endpoint]
-                )
-        else:
-            # Reset failure count on success in CLOSED state
-            if endpoint in self._failure_counts:
-                self._failure_counts[endpoint] = 0
+            if state == CircuitBreakerState.HALF_OPEN:
+                # Increment success count in HALF_OPEN state
+                self._success_counts[endpoint] = self._success_counts.get(endpoint, 0) + 1
+
+                if self._success_counts[endpoint] >= self.success_threshold:
+                    # Enough successes, close the circuit
+                    # Log before resetting the count
+                    success_count = self._success_counts[endpoint]
+                    self._set_state(endpoint, CircuitBreakerState.CLOSED)
+                    self._failure_counts[endpoint] = 0
+                    self._success_counts[endpoint] = 0
+                    logger.info(
+                        "Circuit breaker closed after successful recovery",
+                        endpoint=endpoint,
+                        success_count=success_count
+                    )
+            else:
+                # Reset failure count on success in CLOSED state
+                if endpoint in self._failure_counts:
+                    self._failure_counts[endpoint] = 0
 
     def record_failure(self, endpoint: str) -> None:
-        """Record failed call for endpoint."""
-        state = self._get_state(endpoint)
+        """Record failed call for endpoint.
 
-        # Increment failure count
-        self._failure_counts[endpoint] = self._failure_counts.get(endpoint, 0) + 1
-        self._last_failure_times[endpoint] = time.time()
+        Thread-safe: Uses internal lock to prevent race conditions.
+        """
+        with self._lock:
+            state = self._get_state(endpoint)
 
-        if state == CircuitBreakerState.HALF_OPEN:
-            # Failure in HALF_OPEN state, reopen circuit
-            self._set_state(endpoint, CircuitBreakerState.OPEN)
-            logger.warning(
-                "Circuit breaker reopened after failure in HALF_OPEN",
-                endpoint=endpoint
-            )
-        elif state == CircuitBreakerState.CLOSED:
-            # Check if threshold exceeded
-            if self._failure_counts[endpoint] >= self.failure_threshold:
+            # Increment failure count
+            self._failure_counts[endpoint] = self._failure_counts.get(endpoint, 0) + 1
+            self._last_failure_times[endpoint] = time.time()
+
+            if state == CircuitBreakerState.HALF_OPEN:
+                # Failure in HALF_OPEN state, reopen circuit
                 self._set_state(endpoint, CircuitBreakerState.OPEN)
                 logger.warning(
-                    "Circuit breaker opened due to failures",
-                    endpoint=endpoint,
-                    failure_count=self._failure_counts[endpoint],
-                    threshold=self.failure_threshold
+                    "Circuit breaker reopened after failure in HALF_OPEN",
+                    endpoint=endpoint
                 )
+            elif state == CircuitBreakerState.CLOSED:
+                # Check if threshold exceeded
+                if self._failure_counts[endpoint] >= self.failure_threshold:
+                    self._set_state(endpoint, CircuitBreakerState.OPEN)
+                    logger.warning(
+                        "Circuit breaker opened due to failures",
+                        endpoint=endpoint,
+                        failure_count=self._failure_counts[endpoint],
+                        threshold=self.failure_threshold
+                    )
 
     def get_failure_count(self, endpoint: str) -> int:
-        """Get current failure count for endpoint."""
-        return self._failure_counts.get(endpoint, 0)
+        """Get current failure count for endpoint.
+
+        Thread-safe: Uses internal lock to prevent reading inconsistent state.
+        """
+        with self._lock:
+            return self._failure_counts.get(endpoint, 0)
 
     def get_state_value(self, endpoint: str) -> int:
-        """Get numeric state value for metrics."""
-        return self._get_state(endpoint).value
+        """Get numeric state value for metrics.
+
+        Thread-safe: Uses internal lock to prevent reading inconsistent state.
+        """
+        with self._lock:
+            return self._get_state(endpoint).value
 
     def get_all_endpoints(self) -> list[str]:
-        """Get all tracked endpoints."""
-        # Collect endpoints from all tracking dictionaries
-        all_endpoints: set[str] = set()
-        all_endpoints.update(self._states.keys())
-        all_endpoints.update(self._failure_counts.keys())
-        all_endpoints.update(self._success_counts.keys())
-        all_endpoints.update(self._last_failure_times.keys())
-        return list(all_endpoints)
+        """Get all tracked endpoints.
+
+        Thread-safe: Uses internal lock to prevent reading inconsistent state.
+        """
+        with self._lock:
+            # Collect endpoints from all tracking dictionaries
+            all_endpoints: set[str] = set()
+            all_endpoints.update(self._states.keys())
+            all_endpoints.update(self._failure_counts.keys())
+            all_endpoints.update(self._success_counts.keys())
+            all_endpoints.update(self._last_failure_times.keys())
+            return list(all_endpoints)
 
 
 class F5XCAPIError(Exception):
