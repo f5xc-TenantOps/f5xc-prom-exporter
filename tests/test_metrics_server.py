@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
-from prometheus_client import Gauge
+from prometheus_client import Counter, Gauge
 
 from f5xc_exporter.config import Config
 from f5xc_exporter.metrics_server import MetricsServer
@@ -67,6 +67,10 @@ class TestMetricsServerIntegration:
                 'test_f5xc_circuit_breaker_failures',
                 'Test circuit breaker failures',
                 ['endpoint']
+            )
+            mock_client.circuit_breaker_endpoints_cleaned_metric = Counter(
+                'test_f5xc_circuit_breaker_endpoints_cleaned_total',
+                'Test circuit breaker endpoints cleaned'
             )
 
             yield mock_client
