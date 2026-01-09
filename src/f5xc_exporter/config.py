@@ -36,6 +36,11 @@ class Config(BaseSettings):
     f5xc_request_timeout: int = Field(default=30, alias="F5XC_REQUEST_TIMEOUT")
     f5xc_retry_max_attempts: int = Field(default=3, alias="F5XC_RETRY_MAX_ATTEMPTS")
 
+    # Circuit breaker settings
+    f5xc_circuit_breaker_failure_threshold: int = Field(default=5, alias="F5XC_CIRCUIT_BREAKER_FAILURE_THRESHOLD")
+    f5xc_circuit_breaker_timeout: int = Field(default=60, alias="F5XC_CIRCUIT_BREAKER_TIMEOUT")
+    f5xc_circuit_breaker_success_threshold: int = Field(default=2, alias="F5XC_CIRCUIT_BREAKER_SUCCESS_THRESHOLD")
+
     @property
     def tenant_url_str(self) -> str:
         """Get tenant URL as string without trailing slash."""

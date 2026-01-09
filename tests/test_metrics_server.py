@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
+from prometheus_client import Gauge
 
 from f5xc_exporter.config import Config
 from f5xc_exporter.metrics_server import MetricsServer
@@ -13,6 +14,24 @@ from f5xc_exporter.metrics_server import MetricsServer
 
 class TestMetricsServerIntegration:
     """Test metrics server integration scenarios."""
+
+    def _create_mock_client(self):
+        """Create a properly configured mock client with all required attributes."""
+        mock_client = Mock()
+
+        # Add circuit breaker metrics (required by MetricsServer)
+        mock_client.circuit_breaker_state_metric = Gauge(
+            'test_f5xc_circuit_breaker_state',
+            'Test circuit breaker state',
+            ['endpoint']
+        )
+        mock_client.circuit_breaker_failures_metric = Gauge(
+            'test_f5xc_circuit_breaker_failures',
+            'Test circuit breaker failures',
+            ['endpoint']
+        )
+
+        return mock_client
 
     @pytest.fixture
     def test_config_8081(self):
@@ -59,7 +78,7 @@ class TestMetricsServerIntegration:
         test_config = test_config_8081
         # Mock the F5XC client to avoid real API calls
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
-            mock_client = Mock()
+            mock_client = self._create_mock_client()
             mock_client_class.return_value = mock_client
 
             # Mock successful API calls
@@ -146,7 +165,7 @@ class TestMetricsServerIntegration:
         from prometheus_client import generate_latest
 
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
-            mock_client = Mock()
+            mock_client = self._create_mock_client()
             mock_client_class.return_value = mock_client
 
             # Create metrics server
@@ -177,7 +196,7 @@ class TestMetricsServerIntegration:
         """Test metrics endpoint handles registry errors gracefully."""
         test_config = test_config_8083
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
-            mock_client = Mock()
+            mock_client = self._create_mock_client()
             mock_client_class.return_value = mock_client
 
             server = MetricsServer(test_config)
@@ -209,7 +228,7 @@ class TestMetricsServerIntegration:
         """Test that unknown endpoints return 404."""
         test_config = test_config_8084
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
-            mock_client = Mock()
+            mock_client = self._create_mock_client()
             mock_client_class.return_value = mock_client
 
             server = MetricsServer(test_config)
@@ -230,7 +249,7 @@ class TestMetricsServerIntegration:
         """Test /health endpoint returns detailed JSON response."""
         test_config = test_config_8081
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
-            mock_client = Mock()
+            mock_client = self._create_mock_client()
             mock_client_class.return_value = mock_client
             mock_client.list_namespaces.return_value = ["test-ns"]
 
@@ -276,7 +295,7 @@ class TestMetricsServerIntegration:
         """Test /ready endpoint returns 200 when F5XC API is accessible."""
         test_config = test_config_8082
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
-            mock_client = Mock()
+            mock_client = self._create_mock_client()
             mock_client_class.return_value = mock_client
             # Mock successful API call
             mock_client.list_namespaces.return_value = ["ns1", "ns2", "ns3"]
@@ -317,7 +336,7 @@ class TestMetricsServerIntegration:
         """Test /ready endpoint returns 503 when F5XC API is not accessible."""
         test_config = test_config_8083
         with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
-            mock_client = Mock()
+            mock_client = self._create_mock_client()
             mock_client_class.return_value = mock_client
 
             # Make all list_namespaces calls fail to simulate API being down

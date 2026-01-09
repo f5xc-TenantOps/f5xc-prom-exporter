@@ -258,6 +258,10 @@ class MetricsServer:
         self.registry.register(self.dns_collector.zone_count)
         self.registry.register(self.dns_collector.dns_lb_count)
 
+        # Circuit breaker metrics
+        self.registry.register(self.client.circuit_breaker_state_metric)
+        self.registry.register(self.client.circuit_breaker_failures_metric)
+
         # Collection threads
         self.collection_threads: dict[str, threading.Thread] = {}
         self.stop_event = threading.Event()

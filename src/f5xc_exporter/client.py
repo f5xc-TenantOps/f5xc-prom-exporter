@@ -2,17 +2,180 @@
 
 import time
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Any, Optional
 from urllib.parse import urljoin
 
 import requests
 import structlog
+from prometheus_client import Gauge
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from .config import Config
 
 logger = structlog.get_logger()
+
+
+class CircuitBreakerState(Enum):
+    """Circuit breaker states."""
+    CLOSED = 0      # Normal operation
+    OPEN = 1        # Failing, reject all requests
+    HALF_OPEN = 2   # Testing recovery
+
+
+class CircuitBreaker:
+    """Circuit breaker to prevent cascading failures.
+
+    Tracks failures per endpoint and opens circuit when threshold is exceeded.
+    After timeout, allows limited requests to test recovery (HALF_OPEN state).
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        timeout_seconds: int = 60,
+        success_threshold: int = 2
+    ):
+        """Initialize circuit breaker.
+
+        Args:
+            failure_threshold: Number of consecutive failures before opening circuit
+            timeout_seconds: Seconds to wait before attempting recovery
+            success_threshold: Number of successes in HALF_OPEN before closing circuit
+        """
+        self.failure_threshold = failure_threshold
+        self.timeout_seconds = timeout_seconds
+        self.success_threshold = success_threshold
+
+        # Track state per endpoint
+        self._states: dict[str, CircuitBreakerState] = {}
+        self._failure_counts: dict[str, int] = {}
+        self._success_counts: dict[str, int] = {}
+        self._last_failure_times: dict[str, float] = {}
+
+    def _get_state(self, endpoint: str) -> CircuitBreakerState:
+        """Get current state for endpoint."""
+        return self._states.get(endpoint, CircuitBreakerState.CLOSED)
+
+    def _set_state(self, endpoint: str, state: CircuitBreakerState) -> None:
+        """Set state for endpoint."""
+        old_state = self._get_state(endpoint)
+        self._states[endpoint] = state
+
+        if old_state != state:
+            logger.info(
+                "Circuit breaker state changed",
+                endpoint=endpoint,
+                old_state=old_state.name,
+                new_state=state.name
+            )
+
+    def is_call_allowed(self, endpoint: str) -> bool:
+        """Check if call is allowed for endpoint.
+
+        Returns:
+            True if call should proceed, False if circuit is open
+        """
+        state = self._get_state(endpoint)
+
+        if state == CircuitBreakerState.CLOSED:
+            return True
+
+        if state == CircuitBreakerState.OPEN:
+            # Check if timeout has elapsed
+            last_failure = self._last_failure_times.get(endpoint, 0)
+            if time.time() - last_failure >= self.timeout_seconds:
+                # Transition to HALF_OPEN to test recovery
+                self._set_state(endpoint, CircuitBreakerState.HALF_OPEN)
+                self._success_counts[endpoint] = 0
+                logger.info(
+                    "Circuit breaker entering HALF_OPEN state",
+                    endpoint=endpoint,
+                    timeout_seconds=self.timeout_seconds
+                )
+                return True
+            else:
+                logger.debug(
+                    "Circuit breaker rejecting call",
+                    endpoint=endpoint,
+                    state="OPEN",
+                    seconds_until_retry=int(self.timeout_seconds - (time.time() - last_failure))
+                )
+                return False
+
+        if state == CircuitBreakerState.HALF_OPEN:
+            # Allow call in HALF_OPEN state
+            return True
+
+        return True
+
+    def record_success(self, endpoint: str) -> None:
+        """Record successful call for endpoint."""
+        state = self._get_state(endpoint)
+
+        if state == CircuitBreakerState.HALF_OPEN:
+            # Increment success count in HALF_OPEN state
+            self._success_counts[endpoint] = self._success_counts.get(endpoint, 0) + 1
+
+            if self._success_counts[endpoint] >= self.success_threshold:
+                # Enough successes, close the circuit
+                self._set_state(endpoint, CircuitBreakerState.CLOSED)
+                self._failure_counts[endpoint] = 0
+                self._success_counts[endpoint] = 0
+                logger.info(
+                    "Circuit breaker closed after successful recovery",
+                    endpoint=endpoint,
+                    success_count=self._success_counts[endpoint]
+                )
+        else:
+            # Reset failure count on success in CLOSED state
+            if endpoint in self._failure_counts:
+                self._failure_counts[endpoint] = 0
+
+    def record_failure(self, endpoint: str) -> None:
+        """Record failed call for endpoint."""
+        state = self._get_state(endpoint)
+
+        # Increment failure count
+        self._failure_counts[endpoint] = self._failure_counts.get(endpoint, 0) + 1
+        self._last_failure_times[endpoint] = time.time()
+
+        if state == CircuitBreakerState.HALF_OPEN:
+            # Failure in HALF_OPEN state, reopen circuit
+            self._set_state(endpoint, CircuitBreakerState.OPEN)
+            logger.warning(
+                "Circuit breaker reopened after failure in HALF_OPEN",
+                endpoint=endpoint
+            )
+        elif state == CircuitBreakerState.CLOSED:
+            # Check if threshold exceeded
+            if self._failure_counts[endpoint] >= self.failure_threshold:
+                self._set_state(endpoint, CircuitBreakerState.OPEN)
+                logger.warning(
+                    "Circuit breaker opened due to failures",
+                    endpoint=endpoint,
+                    failure_count=self._failure_counts[endpoint],
+                    threshold=self.failure_threshold
+                )
+
+    def get_failure_count(self, endpoint: str) -> int:
+        """Get current failure count for endpoint."""
+        return self._failure_counts.get(endpoint, 0)
+
+    def get_state_value(self, endpoint: str) -> int:
+        """Get numeric state value for metrics."""
+        return self._get_state(endpoint).value
+
+    def get_all_endpoints(self) -> list[str]:
+        """Get all tracked endpoints."""
+        # Collect endpoints from all tracking dictionaries
+        all_endpoints: set[str] = set()
+        all_endpoints.update(self._states.keys())
+        all_endpoints.update(self._failure_counts.keys())
+        all_endpoints.update(self._success_counts.keys())
+        all_endpoints.update(self._last_failure_times.keys())
+        return list(all_endpoints)
 
 
 class F5XCAPIError(Exception):
@@ -27,6 +190,11 @@ class F5XCAuthenticationError(F5XCAPIError):
 
 class F5XCRateLimitError(F5XCAPIError):
     """Rate limit error."""
+    pass
+
+
+class F5XCCircuitBreakerOpenError(F5XCAPIError):
+    """Circuit breaker is open, call rejected."""
     pass
 
 
@@ -58,13 +226,51 @@ class F5XCClient:
         # Store timeout for requests
         self.timeout = config.f5xc_request_timeout
 
+        # Initialize circuit breaker
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=config.f5xc_circuit_breaker_failure_threshold,
+            timeout_seconds=config.f5xc_circuit_breaker_timeout,
+            success_threshold=config.f5xc_circuit_breaker_success_threshold
+        )
+
+        # Circuit breaker metrics
+        self.circuit_breaker_state_metric = Gauge(
+            'f5xc_circuit_breaker_state',
+            'Circuit breaker state (0=closed, 1=open, 2=half_open)',
+            ['endpoint']
+        )
+        self.circuit_breaker_failures_metric = Gauge(
+            'f5xc_circuit_breaker_failures',
+            'Circuit breaker failure count',
+            ['endpoint']
+        )
+
+    def _update_circuit_breaker_metrics(self, endpoint: str) -> None:
+        """Update circuit breaker metrics for an endpoint."""
+        state_value = self.circuit_breaker.get_state_value(endpoint)
+        failure_count = self.circuit_breaker.get_failure_count(endpoint)
+
+        self.circuit_breaker_state_metric.labels(endpoint=endpoint).set(state_value)
+        self.circuit_breaker_failures_metric.labels(endpoint=endpoint).set(failure_count)
+
     def _make_request(
         self,
         method: str,
         endpoint: str,
         **kwargs: Any
     ) -> dict[str, Any]:
-        """Make HTTP request to F5XC API."""
+        """Make HTTP request to F5XC API with circuit breaker protection."""
+        # Check circuit breaker before making request
+        if not self.circuit_breaker.is_call_allowed(endpoint):
+            logger.warning(
+                "Circuit breaker rejecting request",
+                endpoint=endpoint,
+                state="OPEN"
+            )
+            raise F5XCCircuitBreakerOpenError(
+                f"Circuit breaker is open for endpoint: {endpoint}"
+            )
+
         url = urljoin(self.config.tenant_url_str, endpoint)
 
         logger.info(
@@ -85,11 +291,15 @@ class F5XCClient:
                     retry_after=retry_after,
                     endpoint=endpoint,
                 )
+                # Record failure for circuit breaker
+                self.circuit_breaker.record_failure(endpoint)
+                self._update_circuit_breaker_metrics(endpoint)
                 raise F5XCRateLimitError(f"Rate limited. Retry after {retry_after} seconds")
 
             # Handle authentication errors
             if response.status_code == 401:
                 logger.error("Authentication failed", endpoint=endpoint)
+                # Don't record auth failures - likely config issue, not API issue
                 raise F5XCAuthenticationError("Invalid F5XC access token")
 
             # Handle other HTTP errors
@@ -105,8 +315,18 @@ class F5XCClient:
                 response_size=len(response.content),
             )
 
+            # Record success for circuit breaker
+            self.circuit_breaker.record_success(endpoint)
+            self._update_circuit_breaker_metrics(endpoint)
+
             return dict(data)
 
+        except F5XCRateLimitError:
+            # Re-raise rate limit errors (already recorded failure and updated metrics)
+            raise
+        except F5XCAuthenticationError:
+            # Re-raise auth errors (not recorded as circuit breaker failure)
+            raise
         except requests.exceptions.RequestException as e:
             logger.error(
                 "F5XC API request failed",
@@ -114,6 +334,9 @@ class F5XCClient:
                 error=str(e),
                 exc_info=True,
             )
+            # Record failure for circuit breaker
+            self.circuit_breaker.record_failure(endpoint)
+            self._update_circuit_breaker_metrics(endpoint)
             raise F5XCAPIError(f"API request failed: {e}") from e
 
     def get(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
