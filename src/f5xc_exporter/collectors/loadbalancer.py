@@ -5,7 +5,7 @@ per namespace, filtering by virtual_host_type.
 """
 
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import structlog
 from prometheus_client import Gauge
@@ -300,7 +300,7 @@ class LoadBalancerCollector:
         site: str,
         lb_type: str,
         direction: str,
-        gauge_lookup_fn,
+        gauge_lookup_fn: Callable[[str, str], Optional[Gauge]],
         data_type_name: str,
     ) -> None:
         """Process a single metric or healthscore datapoint.
@@ -361,15 +361,15 @@ class LoadBalancerCollector:
                 return getattr(self, self.HTTP_METRIC_MAP[metric_type], None)
             # Common metrics for HTTP
             if metric_type == "REQUEST_THROUGHPUT":
-                return self.http_request_throughput
+                return self.http_request_throughput  # type: ignore[attr-defined,no-any-return]
             if metric_type == "RESPONSE_THROUGHPUT":
-                return self.http_response_throughput
+                return self.http_response_throughput  # type: ignore[attr-defined,no-any-return]
             if metric_type == "CLIENT_RTT":
-                return self.http_client_rtt
+                return self.http_client_rtt  # type: ignore[attr-defined,no-any-return]
             if metric_type == "SERVER_RTT":
-                return self.http_server_rtt
+                return self.http_server_rtt  # type: ignore[attr-defined,no-any-return]
             if metric_type == "REQUEST_TO_ORIGIN_RATE":
-                return self.http_request_to_origin_rate
+                return self.http_request_to_origin_rate  # type: ignore[attr-defined,no-any-return]
 
         # TCP-specific metrics
         elif lb_type == "TCP_LOAD_BALANCER":
@@ -377,25 +377,25 @@ class LoadBalancerCollector:
                 return getattr(self, self.TCP_METRIC_MAP[metric_type], None)
             # Common metrics for TCP
             if metric_type == "REQUEST_THROUGHPUT":
-                return self.tcp_request_throughput
+                return self.tcp_request_throughput  # type: ignore[attr-defined,no-any-return]
             if metric_type == "RESPONSE_THROUGHPUT":
-                return self.tcp_response_throughput
+                return self.tcp_response_throughput  # type: ignore[attr-defined,no-any-return]
             if metric_type == "CLIENT_RTT":
-                return self.tcp_client_rtt
+                return self.tcp_client_rtt  # type: ignore[attr-defined,no-any-return]
             if metric_type == "SERVER_RTT":
-                return self.tcp_server_rtt
+                return self.tcp_server_rtt  # type: ignore[attr-defined,no-any-return]
 
         # UDP-specific metrics
         elif lb_type == "UDP_LOAD_BALANCER":
             # Common metrics for UDP
             if metric_type == "REQUEST_THROUGHPUT":
-                return self.udp_request_throughput
+                return self.udp_request_throughput  # type: ignore[attr-defined,no-any-return]
             if metric_type == "RESPONSE_THROUGHPUT":
-                return self.udp_response_throughput
+                return self.udp_response_throughput  # type: ignore[attr-defined,no-any-return]
             if metric_type == "CLIENT_RTT":
-                return self.udp_client_rtt
+                return self.udp_client_rtt  # type: ignore[attr-defined,no-any-return]
             if metric_type == "SERVER_RTT":
-                return self.udp_server_rtt
+                return self.udp_server_rtt  # type: ignore[attr-defined,no-any-return]
 
         return None
 

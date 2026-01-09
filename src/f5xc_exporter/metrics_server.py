@@ -222,36 +222,36 @@ class MetricsServer:
 
         # Unified Load Balancer metrics (HTTP, TCP, UDP)
         # HTTP LB metrics
-        self.registry.register(self.lb_collector.http_request_rate)
-        self.registry.register(self.lb_collector.http_request_to_origin_rate)
-        self.registry.register(self.lb_collector.http_error_rate)
-        self.registry.register(self.lb_collector.http_error_rate_4xx)
-        self.registry.register(self.lb_collector.http_error_rate_5xx)
-        self.registry.register(self.lb_collector.http_latency)
-        self.registry.register(self.lb_collector.http_latency_p50)
-        self.registry.register(self.lb_collector.http_latency_p90)
-        self.registry.register(self.lb_collector.http_latency_p99)
-        self.registry.register(self.lb_collector.http_app_latency)
-        self.registry.register(self.lb_collector.http_server_data_transfer_time)
-        self.registry.register(self.lb_collector.http_request_throughput)
-        self.registry.register(self.lb_collector.http_response_throughput)
-        self.registry.register(self.lb_collector.http_client_rtt)
-        self.registry.register(self.lb_collector.http_server_rtt)
+        self.registry.register(self.lb_collector.http_request_rate)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_request_to_origin_rate)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_error_rate)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_error_rate_4xx)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_error_rate_5xx)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_latency)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_latency_p50)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_latency_p90)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_latency_p99)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_app_latency)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_server_data_transfer_time)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_request_throughput)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_response_throughput)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_client_rtt)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.http_server_rtt)  # type: ignore[attr-defined]
         # TCP LB metrics
-        self.registry.register(self.lb_collector.tcp_connection_rate)
-        self.registry.register(self.lb_collector.tcp_connection_duration)
-        self.registry.register(self.lb_collector.tcp_error_rate)
-        self.registry.register(self.lb_collector.tcp_error_rate_client)
-        self.registry.register(self.lb_collector.tcp_error_rate_upstream)
-        self.registry.register(self.lb_collector.tcp_request_throughput)
-        self.registry.register(self.lb_collector.tcp_response_throughput)
-        self.registry.register(self.lb_collector.tcp_client_rtt)
-        self.registry.register(self.lb_collector.tcp_server_rtt)
+        self.registry.register(self.lb_collector.tcp_connection_rate)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.tcp_connection_duration)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.tcp_error_rate)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.tcp_error_rate_client)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.tcp_error_rate_upstream)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.tcp_request_throughput)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.tcp_response_throughput)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.tcp_client_rtt)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.tcp_server_rtt)  # type: ignore[attr-defined]
         # UDP LB metrics
-        self.registry.register(self.lb_collector.udp_request_throughput)
-        self.registry.register(self.lb_collector.udp_response_throughput)
-        self.registry.register(self.lb_collector.udp_client_rtt)
-        self.registry.register(self.lb_collector.udp_server_rtt)
+        self.registry.register(self.lb_collector.udp_request_throughput)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.udp_response_throughput)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.udp_client_rtt)  # type: ignore[attr-defined]
+        self.registry.register(self.lb_collector.udp_server_rtt)  # type: ignore[attr-defined]
         # Unified collection status metrics
         self.registry.register(self.lb_collector.collection_success)
         self.registry.register(self.lb_collector.collection_duration)
