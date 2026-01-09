@@ -101,10 +101,11 @@ class TestMetricsServerIntegration:
             time.sleep(1.0)
 
             try:
-                # Test health endpoint
+                # Test health endpoint - now returns JSON
                 health_response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/health", timeout=5)
                 assert health_response.status_code == 200
-                assert health_response.text == "OK"
+                health_data = health_response.json()
+                assert health_data["status"] == "healthy"
 
                 # Wait for initial metrics collection
                 time.sleep(2.0)
@@ -224,3 +225,132 @@ class TestMetricsServerIntegration:
             finally:
                 server.stop()
                 time.sleep(0.5)
+
+    def test_health_endpoint_json_response(self, test_config_8081):
+        """Test /health endpoint returns detailed JSON response."""
+        test_config = test_config_8081
+        with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
+            mock_client = Mock()
+            mock_client_class.return_value = mock_client
+            mock_client.list_namespaces.return_value = ["test-ns"]
+
+            # Mock collector API calls to avoid errors
+            mock_client.get_quota_usage.return_value = {"quota_usage": {}}
+            mock_client.get_all_lb_metrics_for_namespace.return_value = {"http": [], "tcp": [], "udp": []}
+            mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
+            mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
+            mock_client.get_synthetic_summary.return_value = {"critical_monitor_count": 0, "number_of_monitors": 0, "healthy_monitor_count": 0}
+            mock_client.get_dns_zone_metrics.return_value = {"items": []}
+            mock_client.get_dns_lb_health_status.return_value = {"items": []}
+            mock_client.get_dns_lb_pool_member_health.return_value = {"items": []}
+
+            server = MetricsServer(test_config)
+            server_thread = threading.Thread(target=server.start, daemon=True)
+            server_thread.start()
+            time.sleep(0.5)
+
+            try:
+                response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/health", timeout=5)
+                assert response.status_code == 200
+                assert response.headers["Content-Type"] == "application/json"
+
+                data = response.json()
+                assert data["status"] == "healthy"
+                assert "timestamp" in data
+                assert "version" in data
+                assert "collectors" in data
+
+                # Verify collector status
+                collectors = data["collectors"]
+                assert "quota" in collectors
+                assert "security" in collectors
+                assert "synthetic" in collectors
+                assert "dns" in collectors
+                assert "loadbalancer" in collectors
+
+            finally:
+                server.stop()
+                time.sleep(1.0)  # Give more time for port cleanup
+
+    def test_ready_endpoint_when_api_accessible(self, test_config_8082):
+        """Test /ready endpoint returns 200 when F5XC API is accessible."""
+        test_config = test_config_8082
+        with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
+            mock_client = Mock()
+            mock_client_class.return_value = mock_client
+            # Mock successful API call
+            mock_client.list_namespaces.return_value = ["ns1", "ns2", "ns3"]
+
+            # Mock collector API calls to avoid errors
+            mock_client.get_quota_usage.return_value = {"quota_usage": {}}
+            mock_client.get_all_lb_metrics_for_namespace.return_value = {"http": [], "tcp": [], "udp": []}
+            mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
+            mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
+            mock_client.get_synthetic_summary.return_value = {"critical_monitor_count": 0, "number_of_monitors": 0, "healthy_monitor_count": 0}
+            mock_client.get_dns_zone_metrics.return_value = {"items": []}
+            mock_client.get_dns_lb_health_status.return_value = {"items": []}
+            mock_client.get_dns_lb_pool_member_health.return_value = {"items": []}
+
+            server = MetricsServer(test_config)
+            server_thread = threading.Thread(target=server.start, daemon=True)
+            server_thread.start()
+            # Wait longer for initial readiness check to complete
+            time.sleep(1.0)
+
+            try:
+                response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/ready", timeout=5)
+                assert response.status_code == 200
+                assert response.headers["Content-Type"] == "application/json"
+
+                data = response.json()
+                assert data["status"] == "ready"
+                assert data["api_accessible"] is True
+                assert data["namespace_count"] == 3
+                assert "timestamp" in data
+                assert "last_check" in data
+
+            finally:
+                server.stop()
+                time.sleep(1.0)  # Give more time for port cleanup
+
+    def test_ready_endpoint_when_api_not_accessible(self, test_config_8083):
+        """Test /ready endpoint returns 503 when F5XC API is not accessible."""
+        test_config = test_config_8083
+        with patch('f5xc_exporter.metrics_server.F5XCClient') as mock_client_class:
+            mock_client = Mock()
+            mock_client_class.return_value = mock_client
+
+            # Make all list_namespaces calls fail to simulate API being down
+            mock_client.list_namespaces.side_effect = Exception("Connection refused")
+
+            # Mock other API calls to prevent collection errors
+            mock_client.get_quota_usage.return_value = {"quota_usage": {}}
+            mock_client.get_all_lb_metrics_for_namespace.return_value = {"http": [], "tcp": [], "udp": []}
+            mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
+            mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
+            mock_client.get_synthetic_summary.return_value = {"critical_monitor_count": 0, "number_of_monitors": 0, "healthy_monitor_count": 0}
+            mock_client.get_dns_zone_metrics.return_value = {"items": []}
+            mock_client.get_dns_lb_health_status.return_value = {"items": []}
+            mock_client.get_dns_lb_pool_member_health.return_value = {"items": []}
+
+            server = MetricsServer(test_config)
+            server_thread = threading.Thread(target=server.start, daemon=True)
+            server_thread.start()
+            # Wait longer for initial readiness check to complete
+            time.sleep(1.0)
+
+            try:
+                response = requests.get(f"http://localhost:{test_config.f5xc_exp_http_port}/ready", timeout=5)
+                assert response.status_code == 503
+                assert response.headers["Content-Type"] == "application/json"
+
+                data = response.json()
+                assert data["status"] == "not_ready"
+                assert data["api_accessible"] is False
+                assert "error" in data
+                assert "timestamp" in data
+                assert "last_check" in data
+
+            finally:
+                server.stop()
+                time.sleep(1.0)  # Give more time for port cleanup

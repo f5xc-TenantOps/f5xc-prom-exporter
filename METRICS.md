@@ -283,4 +283,6 @@ Configure collection intervals via environment variables:
 | `F5XC_UDP_LB_INTERVAL` | 120s | Load balancer metrics |
 | `F5XC_DNS_INTERVAL` | 120s | DNS metrics |
 
+**Disabling collectors**: Set any interval to `0` to disable that collector. For example, `F5XC_QUOTA_INTERVAL=0` disables quota collection. The load balancer collector is only disabled when all three intervals (HTTP, TCP, UDP) are set to 0.
+
 **Recommendation**: Set Prometheus scrape interval to match or be slightly longer than the shortest collection interval.

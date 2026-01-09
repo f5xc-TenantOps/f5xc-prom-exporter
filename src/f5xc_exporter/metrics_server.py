@@ -1,12 +1,15 @@
 """Prometheus metrics HTTP server."""
 
+import json
 import threading
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Optional
 
 import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 
+from . import __version__
 from .client import F5XCClient
 from .collectors import (
     DNSCollector,
@@ -29,6 +32,8 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self._handle_metrics()
         elif self.path == "/health":
             self._handle_health()
+        elif self.path == "/ready":
+            self._handle_ready()
         else:
             self._handle_not_found()
 
@@ -49,15 +54,98 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self._send_error_response(500, "Internal server error")
 
     def _handle_health(self) -> None:
-        """Handle /health endpoint."""
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(b"OK")
+        """Handle /health endpoint.
+
+        Always returns 200 if the server is running.
+        Returns JSON with status, version, and collector information.
+        """
+        try:
+            server = getattr(self.server, 'metrics_server', None)
+            if not server:
+                self._send_error_response(500, "Server not properly initialized")
+                return
+
+            # Get collector status
+            collectors = {
+                "quota": "enabled" if server.config.f5xc_quota_interval > 0 else "disabled",
+                "security": "enabled" if server.config.f5xc_security_interval > 0 else "disabled",
+                "synthetic": "enabled" if server.config.f5xc_synthetic_interval > 0 else "disabled",
+                "dns": "enabled" if server.config.f5xc_dns_interval > 0 else "disabled",
+            }
+
+            # Check load balancer collector (enabled if any LB interval > 0)
+            lb_interval = min(
+                server.config.f5xc_http_lb_interval,
+                server.config.f5xc_tcp_lb_interval,
+                server.config.f5xc_udp_lb_interval
+            )
+            collectors["loadbalancer"] = "enabled" if lb_interval > 0 else "disabled"
+
+            response_data = {
+                "status": "healthy",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "version": __version__,
+                "collectors": collectors,
+            }
+
+            self._send_json_response(200, response_data)
+        except Exception as e:
+            logger.error("Error in health check", error=str(e), exc_info=True)
+            self._send_error_response(500, "Health check failed")
+
+    def _handle_ready(self) -> None:
+        """Handle /ready endpoint.
+
+        Returns cached readiness state (updated by background thread).
+        Returns 200 if F5XC API is reachable and authenticated.
+        Returns 503 if the API is not accessible.
+        """
+        try:
+            server = getattr(self.server, 'metrics_server', None)
+            if not server:
+                self._send_error_response(500, "Server not properly initialized")
+                return
+
+            # Return cached readiness state (no blocking API call)
+            with server._readiness_lock:
+                is_ready = server._is_ready
+                namespace_count = server._ready_namespace_count
+                error = server._ready_error
+                last_check = server._ready_last_check
+
+            if is_ready:
+                response_data = {
+                    "status": "ready",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "api_accessible": True,
+                    "namespace_count": namespace_count,
+                    "last_check": last_check.isoformat(),
+                }
+                self._send_json_response(200, response_data)
+            else:
+                response_data = {
+                    "status": "not_ready",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "api_accessible": False,
+                    "error": error or "API check has not completed yet",
+                    "last_check": last_check.isoformat(),
+                }
+                self._send_json_response(503, response_data)
+        except Exception as e:
+            logger.error("Error in readiness check", error=str(e), exc_info=True)
+            self._send_error_response(500, "Readiness check failed")
 
     def _handle_not_found(self) -> None:
         """Handle 404 responses."""
         self._send_error_response(404, "Not found")
+
+    def _send_json_response(self, status_code: int, data: dict[str, Any]) -> None:
+        """Send JSON response."""
+        self.send_response(status_code)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        json_data = json.dumps(data, indent=2)
+        self.wfile.write(json_data.encode('utf-8'))
 
     def _send_error_response(self, status_code: int, message: str) -> None:
         """Send error response."""
@@ -174,6 +262,13 @@ class MetricsServer:
         self.collection_threads: dict[str, threading.Thread] = {}
         self.stop_event = threading.Event()
 
+        # Readiness state (cached to avoid blocking API calls on every probe)
+        self._readiness_lock = threading.Lock()
+        self._is_ready = False
+        self._ready_namespace_count = 0
+        self._ready_error: Optional[str] = None
+        self._ready_last_check = datetime.now(timezone.utc)
+
         # HTTP server
         self.httpd: Optional[HTTPServer] = None
 
@@ -189,6 +284,16 @@ class MetricsServer:
 
     def _start_collection_threads(self) -> None:
         """Start metric collection threads."""
+        # Start readiness monitoring thread (always enabled)
+        readiness_thread = threading.Thread(
+            target=self._monitor_readiness,
+            name="readiness-monitor",
+            daemon=True
+        )
+        readiness_thread.start()
+        self.collection_threads["readiness"] = readiness_thread
+        logger.info("Started readiness monitoring", interval=30)
+
         # Quota metrics collection
         if self.config.f5xc_quota_interval > 0:
             quota_thread = threading.Thread(
@@ -199,6 +304,8 @@ class MetricsServer:
             quota_thread.start()
             self.collection_threads["quota"] = quota_thread
             logger.info("Started quota metrics collection", interval=self.config.f5xc_quota_interval)
+        else:
+            logger.info("Quota collector disabled (interval=0)")
 
         # Security metrics collection
         if self.config.f5xc_security_interval > 0:
@@ -210,6 +317,8 @@ class MetricsServer:
             security_thread.start()
             self.collection_threads["security"] = security_thread
             logger.info("Started security metrics collection", interval=self.config.f5xc_security_interval)
+        else:
+            logger.info("Security collector disabled (interval=0)")
 
         # Synthetic monitoring metrics collection
         if self.config.f5xc_synthetic_interval > 0:
@@ -221,6 +330,8 @@ class MetricsServer:
             synthetic_thread.start()
             self.collection_threads["synthetic"] = synthetic_thread
             logger.info("Started synthetic monitoring metrics collection", interval=self.config.f5xc_synthetic_interval)
+        else:
+            logger.info("Synthetic monitoring collector disabled (interval=0)")
 
         # Unified Load Balancer metrics collection (HTTP, TCP, UDP)
         lb_interval = min(
@@ -237,6 +348,8 @@ class MetricsServer:
             lb_thread.start()
             self.collection_threads["lb"] = lb_thread
             logger.info("Started unified LB metrics collection (HTTP, TCP, UDP)", interval=lb_interval)
+        else:
+            logger.info("Load balancer collector disabled (interval=0)")
 
         # DNS metrics collection
         if self.config.f5xc_dns_interval > 0:
@@ -248,11 +361,14 @@ class MetricsServer:
             dns_thread.start()
             self.collection_threads["dns"] = dns_thread
             logger.info("Started DNS metrics collection", interval=self.config.f5xc_dns_interval)
+        else:
+            logger.info("DNS collector disabled (interval=0)")
 
     def _start_http_server(self) -> None:
         """Start HTTP server for metrics endpoint."""
         self.httpd = HTTPServer(("", self.config.f5xc_exp_http_port), MetricsHandler)
         self.httpd.registry = self.registry  # type: ignore[attr-defined]
+        self.httpd.metrics_server = self  # type: ignore[attr-defined]
 
         logger.info("Starting HTTP server", port=self.config.f5xc_exp_http_port)
 
@@ -347,6 +463,52 @@ class MetricsServer:
             # Wait for next collection interval
             if self.stop_event.wait(self.config.f5xc_dns_interval):
                 break
+
+    def _check_readiness(self) -> None:
+        """Check API readiness and update cached state.
+
+        This method performs a lightweight API call to verify connectivity
+        and authentication. The result is cached to avoid hammering the API
+        on every readiness probe request.
+        """
+        try:
+            # Lightweight API call to check connectivity
+            namespaces = self.client.list_namespaces()
+
+            # Update cached state
+            with self._readiness_lock:
+                self._is_ready = True
+                self._ready_namespace_count = len(namespaces)
+                self._ready_error = None
+                self._ready_last_check = datetime.now(timezone.utc)
+
+            logger.debug("Readiness check passed", namespace_count=len(namespaces))
+
+        except Exception as e:
+            # Update cached state with error
+            with self._readiness_lock:
+                self._is_ready = False
+                self._ready_namespace_count = 0
+                self._ready_error = "API connection failed"
+                self._ready_last_check = datetime.now(timezone.utc)
+
+            logger.warning("Readiness check failed", error=str(e))
+
+    def _monitor_readiness(self) -> None:
+        """Background thread to periodically check API readiness.
+
+        Checks readiness every 30 seconds to keep cached state fresh
+        without overloading the API or blocking readiness probes.
+        """
+        # Run initial check immediately
+        self._check_readiness()
+
+        while not self.stop_event.is_set():
+            # Wait 30 seconds between checks
+            if self.stop_event.wait(30):
+                break
+
+            self._check_readiness()
 
     def stop(self) -> None:
         """Stop the metrics server and collection threads."""

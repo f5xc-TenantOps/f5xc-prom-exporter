@@ -22,16 +22,13 @@ class Config(BaseSettings):
     f5xc_exp_http_port: int = Field(default=8080, alias="F5XC_EXP_HTTP_PORT")
     f5xc_exp_log_level: str = Field(default="INFO", alias="F5XC_EXP_LOG_LEVEL")
 
-    # Collection intervals (seconds)
+    # Collection intervals (seconds) - set to 0 to disable a collector
     f5xc_quota_interval: int = Field(default=600, alias="F5XC_QUOTA_INTERVAL")
-    f5xc_cdn_interval: int = Field(default=120, alias="F5XC_CDN_INTERVAL")
     f5xc_http_lb_interval: int = Field(default=120, alias="F5XC_HTTP_LB_INTERVAL")
     f5xc_tcp_lb_interval: int = Field(default=120, alias="F5XC_TCP_LB_INTERVAL")
     f5xc_udp_lb_interval: int = Field(default=120, alias="F5XC_UDP_LB_INTERVAL")
-    f5xc_dns_health_interval: int = Field(default=60, alias="F5XC_DNS_HEALTH_INTERVAL")
     f5xc_dns_interval: int = Field(default=120, alias="F5XC_DNS_INTERVAL")
-    f5xc_security_interval: int = Field(default=300, alias="F5XC_SECURITY_INTERVAL")
-    f5xc_bot_defense_interval: int = Field(default=300, alias="F5XC_BOT_DEFENSE_INTERVAL")
+    f5xc_security_interval: int = Field(default=120, alias="F5XC_SECURITY_INTERVAL")
     f5xc_synthetic_interval: int = Field(default=120, alias="F5XC_SYNTHETIC_INTERVAL")
 
     # Rate limiting

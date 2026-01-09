@@ -74,6 +74,31 @@ See the `config/` directory for Kubernetes deployment examples.
 | `F5XC_HTTP_PORT` | No | 8080 | Port for metrics HTTP server |
 | `F5XC_LOG_LEVEL` | No | INFO | Logging level |
 
+### Disabling Collectors
+
+To disable a specific collector, set its interval environment variable to `0`:
+
+```bash
+# Disable quota collection
+export F5XC_QUOTA_INTERVAL=0
+
+# Disable security collection
+export F5XC_SECURITY_INTERVAL=0
+
+# Disable DNS collection
+export F5XC_DNS_INTERVAL=0
+
+# Disable synthetic monitoring
+export F5XC_SYNTHETIC_INTERVAL=0
+
+# Disable load balancer collection (requires all three to be 0)
+export F5XC_HTTP_LB_INTERVAL=0
+export F5XC_TCP_LB_INTERVAL=0
+export F5XC_UDP_LB_INTERVAL=0
+```
+
+When a collector is disabled, the exporter logs a message indicating which collector was disabled.
+
 ## Prometheus Configuration
 
 Add this job to your `prometheus.yml`:
@@ -84,6 +109,78 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:8080']
     scrape_interval: 60s
+```
+
+## Health and Readiness Endpoints
+
+The exporter provides health check endpoints for monitoring and orchestration:
+
+### `/health` - Liveness Probe
+
+Returns 200 if the exporter is running. Use for Kubernetes liveness probes.
+
+**Example response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-01-08T19:00:00.000000+00:00",
+  "version": "0.1.0",
+  "collectors": {
+    "quota": "enabled",
+    "security": "enabled",
+    "synthetic": "enabled",
+    "dns": "enabled",
+    "loadbalancer": "enabled"
+  }
+}
+```
+
+**Kubernetes liveness probe:**
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+```
+
+### `/ready` - Readiness Probe
+
+Returns 200 if F5XC API is accessible and authenticated, 503 otherwise. Use for Kubernetes readiness probes.
+
+**Note:** The readiness state is cached and updated every 30 seconds by a background thread to avoid hammering the F5XC API on every probe request.
+
+**Example response (ready):**
+```json
+{
+  "status": "ready",
+  "timestamp": "2026-01-08T19:00:00.000000+00:00",
+  "api_accessible": true,
+  "namespace_count": 3,
+  "last_check": "2026-01-08T18:59:45.000000+00:00"
+}
+```
+
+**Example response (not ready):**
+```json
+{
+  "status": "not_ready",
+  "timestamp": "2026-01-08T19:00:00.000000+00:00",
+  "api_accessible": false,
+  "error": "API connection failed",
+  "last_check": "2026-01-08T18:59:45.000000+00:00"
+}
+```
+
+**Kubernetes readiness probe:**
+```yaml
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
 ```
 
 ## Development
