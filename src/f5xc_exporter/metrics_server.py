@@ -74,7 +74,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
             }
 
             # Check load balancer collector (enabled if any LB interval > 0)
-            lb_interval = min(
+            lb_interval = max(
                 server.config.f5xc_http_lb_interval,
                 server.config.f5xc_tcp_lb_interval,
                 server.config.f5xc_udp_lb_interval
@@ -144,7 +144,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
-        json_data = json.dumps(data, indent=2)
+        json_data = json.dumps(data)
         self.wfile.write(json_data.encode('utf-8'))
 
     def _send_error_response(self, status_code: int, message: str) -> None:
@@ -334,7 +334,7 @@ class MetricsServer:
             logger.info("Synthetic monitoring collector disabled (interval=0)")
 
         # Unified Load Balancer metrics collection (HTTP, TCP, UDP)
-        lb_interval = min(
+        lb_interval = max(
             self.config.f5xc_http_lb_interval,
             self.config.f5xc_tcp_lb_interval,
             self.config.f5xc_udp_lb_interval
@@ -428,7 +428,7 @@ class MetricsServer:
 
     def _collect_lb_metrics(self) -> None:
         """Collect all load balancer metrics (HTTP, TCP, UDP) periodically."""
-        lb_interval = min(
+        lb_interval = max(
             self.config.f5xc_http_lb_interval,
             self.config.f5xc_tcp_lb_interval,
             self.config.f5xc_udp_lb_interval
@@ -533,7 +533,7 @@ class MetricsServer:
 
     def get_status(self) -> dict[str, Any]:
         """Get server status information."""
-        lb_interval = min(
+        lb_interval = max(
             self.config.f5xc_http_lb_interval,
             self.config.f5xc_tcp_lb_interval,
             self.config.f5xc_udp_lb_interval
