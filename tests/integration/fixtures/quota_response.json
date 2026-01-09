@@ -1,0 +1,30 @@
+{
+  "quota_usage": {
+    "load_balancer": {
+      "limit": {
+        "maximum": 10
+      },
+      "usage": {
+        "current": 5
+      }
+    },
+    "origin_pool": {
+      "limit": {
+        "maximum": 20
+      },
+      "usage": {
+        "current": 12
+      }
+    }
+  },
+  "resources": {
+    "virtual_host": {
+      "limit": {
+        "maximum": 50
+      },
+      "usage": {
+        "current": 25
+      }
+    }
+  }
+}

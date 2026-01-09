@@ -121,6 +121,11 @@ Unified metrics for HTTP, TCP, and UDP load balancers with upstream/downstream d
 | `f5xc_http_lb_response_throughput_bps` | Gauge | tenant, namespace, load_balancer, site, direction | Response throughput (bits/sec) |
 | `f5xc_http_lb_client_rtt_seconds` | Gauge | tenant, namespace, load_balancer, site, direction | Client RTT |
 | `f5xc_http_lb_server_rtt_seconds` | Gauge | tenant, namespace, load_balancer, site, direction | Server RTT |
+| `f5xc_http_lb_healthscore_overall` | Gauge | tenant, namespace, load_balancer, site, direction | Overall health score (0-100) |
+| `f5xc_http_lb_healthscore_connectivity` | Gauge | tenant, namespace, load_balancer, site, direction | Connectivity health score (0-100) |
+| `f5xc_http_lb_healthscore_performance` | Gauge | tenant, namespace, load_balancer, site, direction | Performance health score (0-100) |
+| `f5xc_http_lb_healthscore_security` | Gauge | tenant, namespace, load_balancer, site, direction | Security health score (0-100) |
+| `f5xc_http_lb_healthscore_reliability` | Gauge | tenant, namespace, load_balancer, site, direction | Reliability health score (0-100) |
 
 ### TCP Load Balancer Metrics
 
@@ -135,6 +140,11 @@ Unified metrics for HTTP, TCP, and UDP load balancers with upstream/downstream d
 | `f5xc_tcp_lb_response_throughput_bps` | Gauge | tenant, namespace, load_balancer, site, direction | Response throughput (bits/sec) |
 | `f5xc_tcp_lb_client_rtt_seconds` | Gauge | tenant, namespace, load_balancer, site, direction | Client RTT |
 | `f5xc_tcp_lb_server_rtt_seconds` | Gauge | tenant, namespace, load_balancer, site, direction | Server RTT |
+| `f5xc_tcp_lb_healthscore_overall` | Gauge | tenant, namespace, load_balancer, site, direction | Overall health score (0-100) |
+| `f5xc_tcp_lb_healthscore_connectivity` | Gauge | tenant, namespace, load_balancer, site, direction | Connectivity health score (0-100) |
+| `f5xc_tcp_lb_healthscore_performance` | Gauge | tenant, namespace, load_balancer, site, direction | Performance health score (0-100) |
+| `f5xc_tcp_lb_healthscore_security` | Gauge | tenant, namespace, load_balancer, site, direction | Security health score (0-100) |
+| `f5xc_tcp_lb_healthscore_reliability` | Gauge | tenant, namespace, load_balancer, site, direction | Reliability health score (0-100) |
 
 ### UDP Load Balancer Metrics
 
@@ -144,6 +154,11 @@ Unified metrics for HTTP, TCP, and UDP load balancers with upstream/downstream d
 | `f5xc_udp_lb_response_throughput_bps` | Gauge | tenant, namespace, load_balancer, site, direction | Response throughput (bits/sec) |
 | `f5xc_udp_lb_client_rtt_seconds` | Gauge | tenant, namespace, load_balancer, site, direction | Client RTT |
 | `f5xc_udp_lb_server_rtt_seconds` | Gauge | tenant, namespace, load_balancer, site, direction | Server RTT |
+| `f5xc_udp_lb_healthscore_overall` | Gauge | tenant, namespace, load_balancer, site, direction | Overall health score (0-100) |
+| `f5xc_udp_lb_healthscore_connectivity` | Gauge | tenant, namespace, load_balancer, site, direction | Connectivity health score (0-100) |
+| `f5xc_udp_lb_healthscore_performance` | Gauge | tenant, namespace, load_balancer, site, direction | Performance health score (0-100) |
+| `f5xc_udp_lb_healthscore_security` | Gauge | tenant, namespace, load_balancer, site, direction | Security health score (0-100) |
+| `f5xc_udp_lb_healthscore_reliability` | Gauge | tenant, namespace, load_balancer, site, direction | Reliability health score (0-100) |
 
 ### Load Balancer Collection Status
 
@@ -230,6 +245,15 @@ f5xc_http_lb_error_rate / f5xc_http_lb_request_rate * 100
 
 # Total request throughput
 sum(f5xc_http_lb_request_throughput_bps) by (tenant)
+
+# Load balancers with low health scores
+f5xc_http_lb_healthscore_overall{direction="downstream"} < 80
+
+# Performance health score trend
+f5xc_http_lb_healthscore_performance{direction="downstream"}
+
+# Security health score by namespace
+avg(f5xc_http_lb_healthscore_security{direction="downstream"}) by (namespace)
 ```
 
 ### Synthetic Monitoring

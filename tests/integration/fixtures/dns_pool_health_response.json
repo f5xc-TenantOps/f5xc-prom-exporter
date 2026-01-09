@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "dns_lb_name": "global-dns-lb",
+      "pool_name": "primary-pool",
+      "member_address": "10.0.0.1",
+      "health_status": "HEALTHY"
+    },
+    {
+      "dns_lb_name": "global-dns-lb",
+      "pool_name": "primary-pool",
+      "member_address": "10.0.0.2",
+      "health_status": "HEALTHY"
+    },
+    {
+      "dns_lb_name": "regional-dns-lb",
+      "pool_name": "backup-pool",
+      "member_address": "10.1.0.1",
+      "health_status": "UNHEALTHY"
+    }
+  ]
+}

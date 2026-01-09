@@ -1,0 +1,56 @@
+{
+  "data": [
+    {
+      "type": "TOTAL_REQUESTS",
+      "data": [
+        {
+          "key": {
+            "VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"
+          },
+          "value": [
+            {
+              "timestamp": 1765738201,
+              "value": "13442"
+            }
+          ]
+        }
+      ],
+      "unit": "UNIT_COUNT"
+    },
+    {
+      "type": "ATTACKED_REQUESTS",
+      "data": [
+        {
+          "key": {
+            "VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"
+          },
+          "value": [
+            {
+              "timestamp": 1765738201,
+              "value": "25"
+            }
+          ]
+        }
+      ],
+      "unit": "UNIT_COUNT"
+    },
+    {
+      "type": "BOT_DETECTION",
+      "data": [
+        {
+          "key": {
+            "VIRTUAL_HOST": "ves-io-http-loadbalancer-demo-shop-fe"
+          },
+          "value": [
+            {
+              "timestamp": 1765738201,
+              "value": "18"
+            }
+          ]
+        }
+      ],
+      "unit": "UNIT_COUNT"
+    }
+  ],
+  "step": "5m"
+}

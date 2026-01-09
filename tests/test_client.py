@@ -1,14 +1,17 @@
 """Tests for F5XC API client."""
 
 import json
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 import responses
 
 from f5xc_exporter.client import (
+    CircuitBreaker,
+    CircuitBreakerState,
     F5XCAPIError,
     F5XCAuthenticationError,
+    F5XCCircuitBreakerOpenError,
     F5XCClient,
     F5XCRateLimitError,
 )
@@ -29,12 +32,7 @@ class TestF5XCClient:
     @responses.activate
     def test_successful_get_request(self, test_config):
         """Test successful GET request."""
-        responses.add(
-            responses.GET,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"status": "ok"},
-            status=200
-        )
+        responses.add(responses.GET, "https://test.console.ves.volterra.io/api/test", json={"status": "ok"}, status=200)
 
         client = F5XCClient(test_config)
         result = client.get("/api/test")
@@ -46,10 +44,7 @@ class TestF5XCClient:
     def test_successful_post_request(self, test_config):
         """Test successful POST request."""
         responses.add(
-            responses.POST,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"created": True},
-            status=201
+            responses.POST, "https://test.console.ves.volterra.io/api/test", json={"created": True}, status=201
         )
 
         client = F5XCClient(test_config)
@@ -63,10 +58,7 @@ class TestF5XCClient:
     def test_authentication_error(self, test_config):
         """Test authentication error handling."""
         responses.add(
-            responses.GET,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"error": "Unauthorized"},
-            status=401
+            responses.GET, "https://test.console.ves.volterra.io/api/test", json={"error": "Unauthorized"}, status=401
         )
 
         client = F5XCClient(test_config)
@@ -98,10 +90,7 @@ class TestF5XCClient:
     def test_general_api_error(self, test_config):
         """Test general API error handling."""
         responses.add(
-            responses.GET,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"error": "Server Error"},
-            status=500
+            responses.GET, "https://test.console.ves.volterra.io/api/test", json={"error": "Server Error"}, status=500
         )
 
         client = F5XCClient(test_config)
@@ -118,7 +107,7 @@ class TestF5XCClient:
             responses.GET,
             "https://test.console.ves.volterra.io/api/web/namespaces/system/quota/usage",
             json=sample_quota_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -134,7 +123,7 @@ class TestF5XCClient:
             responses.GET,
             "https://test.console.ves.volterra.io/api/web/namespaces/custom/quota/usage",
             json=sample_quota_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -150,7 +139,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/service",
             json=sample_service_graph_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -174,13 +163,13 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/demo-shop/app_firewall/metrics",
             json={"data": [], "step": "5m"},
-            status=200
+            status=200,
         )
         responses.add(
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/demo-shop/app_security/events/aggregation",
             json={"aggs": {}, "total_hits": "0"},
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -199,7 +188,7 @@ class TestF5XCClient:
             responses.GET,
             "https://test.console.ves.volterra.io/api/observability/synthetic_monitor/namespaces/demo-shop/global-summary",
             json=sample_synthetic_http_summary_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -217,7 +206,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/all_ns_service",
             json=sample_http_lb_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -228,6 +217,7 @@ class TestF5XCClient:
 
         # Check POST payload contains expected fields
         import json
+
         request_body = json.loads(responses.calls[0].request.body)
         assert "field_selector" in request_body
         assert "node" in request_body["field_selector"]
@@ -248,7 +238,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/all_ns_service",
             json=sample_tcp_lb_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -259,6 +249,7 @@ class TestF5XCClient:
 
         # Check POST payload contains expected fields
         import json
+
         request_body = json.loads(responses.calls[0].request.body)
         assert "field_selector" in request_body
         assert "node" in request_body["field_selector"]
@@ -279,7 +270,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/system/graph/all_ns_service",
             json=sample_udp_lb_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -290,6 +281,7 @@ class TestF5XCClient:
 
         # Check POST payload contains expected fields
         import json
+
         request_body = json.loads(responses.calls[0].request.body)
         assert "field_selector" in request_body
         assert "node" in request_body["field_selector"]
@@ -319,7 +311,7 @@ class TestF5XCClient:
                     {"name": "ves-io-internal"},  # Should be filtered out
                 ]
             },
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -338,7 +330,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/prod/graph/service",
             json=sample_http_lb_response,
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -376,7 +368,7 @@ class TestF5XCClient:
                     {"name": "staging"},
                 ]
             },
-            status=200
+            status=200,
         )
 
         # Mock per-namespace service graph calls
@@ -385,28 +377,32 @@ class TestF5XCClient:
             "https://test.console.ves.volterra.io/api/data/namespaces/prod/graph/service",
             json={
                 "data": {
-                    "nodes": [{
-                        "id": {"vhost": "app-1", "site": "site-1", "virtual_host_type": "HTTP_LOAD_BALANCER"},
-                        "data": {"metric": {"downstream": []}}
-                    }],
-                    "edges": []
+                    "nodes": [
+                        {
+                            "id": {"vhost": "app-1", "site": "site-1", "virtual_host_type": "HTTP_LOAD_BALANCER"},
+                            "data": {"metric": {"downstream": []}},
+                        }
+                    ],
+                    "edges": [],
                 }
             },
-            status=200
+            status=200,
         )
         responses.add(
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/staging/graph/service",
             json={
                 "data": {
-                    "nodes": [{
-                        "id": {"vhost": "app-2", "site": "site-2", "virtual_host_type": "TCP_LOAD_BALANCER"},
-                        "data": {"metric": {"downstream": []}}
-                    }],
-                    "edges": []
+                    "nodes": [
+                        {
+                            "id": {"vhost": "app-2", "site": "site-2", "virtual_host_type": "TCP_LOAD_BALANCER"},
+                            "data": {"metric": {"downstream": []}},
+                        }
+                    ],
+                    "edges": [],
                 }
             },
-            status=200
+            status=200,
         )
 
         client = F5XCClient(test_config)
@@ -433,7 +429,7 @@ class TestF5XCClient:
                     {"name": "broken"},
                 ]
             },
-            status=200
+            status=200,
         )
 
         # Mock prod namespace - success
@@ -442,14 +438,16 @@ class TestF5XCClient:
             "https://test.console.ves.volterra.io/api/data/namespaces/prod/graph/service",
             json={
                 "data": {
-                    "nodes": [{
-                        "id": {"vhost": "app-1", "site": "site-1", "virtual_host_type": "HTTP_LOAD_BALANCER"},
-                        "data": {"metric": {"downstream": []}}
-                    }],
-                    "edges": []
+                    "nodes": [
+                        {
+                            "id": {"vhost": "app-1", "site": "site-1", "virtual_host_type": "HTTP_LOAD_BALANCER"},
+                            "data": {"metric": {"downstream": []}},
+                        }
+                    ],
+                    "edges": [],
                 }
             },
-            status=200
+            status=200,
         )
 
         # Mock broken namespace - failure
@@ -457,7 +455,7 @@ class TestF5XCClient:
             responses.POST,
             "https://test.console.ves.volterra.io/api/data/namespaces/broken/graph/service",
             json={"error": "Internal Server Error"},
-            status=500
+            status=500,
         )
 
         client = F5XCClient(test_config)
@@ -481,16 +479,9 @@ class TestF5XCClient:
     def test_url_construction(self, test_config):
         """Test URL construction handles trailing slashes correctly."""
         # Test with trailing slash in config
-        config_with_slash = test_config.model_copy(update={
-            'f5xc_tenant_url': 'https://test.console.ves.volterra.io/'
-        })
+        config_with_slash = test_config.model_copy(update={"f5xc_tenant_url": "https://test.console.ves.volterra.io/"})
 
-        responses.add(
-            responses.GET,
-            "https://test.console.ves.volterra.io/api/test",
-            json={"ok": True},
-            status=200
-        )
+        responses.add(responses.GET, "https://test.console.ves.volterra.io/api/test", json={"ok": True}, status=200)
 
         client = F5XCClient(config_with_slash)
         result = client.get("/api/test")
@@ -498,3 +489,381 @@ class TestF5XCClient:
         assert result == {"ok": True}
         # Should not have double slashes
         assert "//api" not in responses.calls[0].request.url
+
+
+class TestCircuitBreaker:
+    """Test circuit breaker functionality."""
+
+    def test_initial_state_is_closed(self):
+        """Test circuit breaker starts in CLOSED state."""
+        cb = CircuitBreaker(failure_threshold=3, timeout_seconds=60, success_threshold=2)
+
+        assert cb.is_call_allowed("/api/test")
+        assert cb.get_state_value("/api/test") == CircuitBreakerState.CLOSED.value
+        assert cb.get_failure_count("/api/test") == 0
+
+    def test_transitions_to_open_after_threshold_failures(self):
+        """Test circuit opens after reaching failure threshold."""
+        cb = CircuitBreaker(failure_threshold=3, timeout_seconds=60, success_threshold=2)
+        endpoint = "/api/test"
+
+        # Record 2 failures - should stay CLOSED
+        cb.record_failure(endpoint)
+        cb.record_failure(endpoint)
+        assert cb.is_call_allowed(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
+
+        # 3rd failure - should transition to OPEN
+        cb.record_failure(endpoint)
+        assert not cb.is_call_allowed(endpoint)
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+        assert cb.get_failure_count(endpoint) == 3
+
+    def test_open_circuit_rejects_calls(self):
+        """Test OPEN circuit rejects all calls."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=60, success_threshold=2)
+        endpoint = "/api/test"
+
+        # Open the circuit
+        cb.record_failure(endpoint)
+        cb.record_failure(endpoint)
+
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+        assert not cb.is_call_allowed(endpoint)
+
+    def test_transitions_to_half_open_after_timeout(self):
+        """Test circuit transitions to HALF_OPEN after timeout."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=1, success_threshold=2)
+        endpoint = "/api/test"
+
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
+
+            # Open the circuit
+            cb.record_failure(endpoint)
+            cb.record_failure(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+
+            # Advance time past timeout (1.1 seconds)
+            mock_time.return_value = 1.1
+
+            # Should transition to HALF_OPEN and allow call
+            assert cb.is_call_allowed(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+    def test_half_open_closes_after_success_threshold(self):
+        """Test circuit closes after success threshold in HALF_OPEN."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=1, success_threshold=2)
+        endpoint = "/api/test"
+
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
+
+            # Open the circuit
+            cb.record_failure(endpoint)
+            cb.record_failure(endpoint)
+
+            # Advance time past timeout and transition to HALF_OPEN
+            mock_time.return_value = 1.1
+            assert cb.is_call_allowed(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+            # First success - should stay HALF_OPEN
+            cb.record_success(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+            # Second success - should close circuit
+            cb.record_success(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
+            assert cb.get_failure_count(endpoint) == 0
+
+    def test_half_open_reopens_on_failure(self):
+        """Test circuit reopens on failure in HALF_OPEN state."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=1, success_threshold=2)
+        endpoint = "/api/test"
+
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
+
+            # Open the circuit
+            cb.record_failure(endpoint)
+            cb.record_failure(endpoint)
+
+            # Advance time past timeout and transition to HALF_OPEN
+            mock_time.return_value = 1.1
+            assert cb.is_call_allowed(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.HALF_OPEN.value
+
+            # Failure in HALF_OPEN - should reopen
+            cb.record_failure(endpoint)
+            assert cb.get_state_value(endpoint) == CircuitBreakerState.OPEN.value
+            assert not cb.is_call_allowed(endpoint)
+
+    def test_success_resets_failure_count_in_closed_state(self):
+        """Test success resets failure count in CLOSED state."""
+        cb = CircuitBreaker(failure_threshold=3, timeout_seconds=60, success_threshold=2)
+        endpoint = "/api/test"
+
+        # Record failures
+        cb.record_failure(endpoint)
+        cb.record_failure(endpoint)
+        assert cb.get_failure_count(endpoint) == 2
+
+        # Record success - should reset count
+        cb.record_success(endpoint)
+        assert cb.get_failure_count(endpoint) == 0
+        assert cb.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
+
+    def test_multiple_endpoints_tracked_independently(self):
+        """Test different endpoints are tracked independently."""
+        cb = CircuitBreaker(failure_threshold=2, timeout_seconds=60, success_threshold=2)
+        endpoint1 = "/api/test1"
+        endpoint2 = "/api/test2"
+
+        # Open circuit for endpoint1
+        cb.record_failure(endpoint1)
+        cb.record_failure(endpoint1)
+
+        assert cb.get_state_value(endpoint1) == CircuitBreakerState.OPEN.value
+        assert not cb.is_call_allowed(endpoint1)
+
+        # endpoint2 should still be CLOSED
+        assert cb.get_state_value(endpoint2) == CircuitBreakerState.CLOSED.value
+        assert cb.is_call_allowed(endpoint2)
+
+    def test_get_all_endpoints(self):
+        """Test getting all tracked endpoints."""
+        cb = CircuitBreaker(failure_threshold=3, timeout_seconds=60, success_threshold=2)
+
+        cb.record_failure("/api/test1")
+        cb.record_failure("/api/test2")
+        cb.record_failure("/api/test3")
+
+        endpoints = cb.get_all_endpoints()
+        assert "/api/test1" in endpoints
+        assert "/api/test2" in endpoints
+        assert "/api/test3" in endpoints
+
+    def test_cleanup_stale_endpoints(self):
+        """Test cleanup of stale endpoints."""
+        cb = CircuitBreaker(
+            failure_threshold=3,
+            timeout_seconds=60,
+            success_threshold=2,
+            endpoint_ttl_hours=1  # 1 hour TTL for testing
+        )
+
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
+
+            # Record some endpoint activity
+            cb.record_failure("/api/active")
+            cb.record_failure("/api/stale1")
+            cb.record_failure("/api/stale2")
+
+            # Verify all endpoints are tracked
+            endpoints = cb.get_all_endpoints()
+            assert len(endpoints) == 3
+            assert "/api/active" in endpoints
+            assert "/api/stale1" in endpoints
+            assert "/api/stale2" in endpoints
+
+            # Advance time 30 minutes and touch active endpoint
+            mock_time.return_value = 1800.0  # 30 minutes
+            cb.is_call_allowed("/api/active")
+
+            # Advance time to just under 1 hour from last active access (55 minutes later)
+            mock_time.return_value = 5100.0  # 1 hour 25 minutes from start, 55 mins from active touch
+
+            # Cleanup should remove only the two stale endpoints (not touched since t=0)
+            cleaned = cb.cleanup_stale_endpoints()
+
+            # Should have cleaned up 2 stale endpoints (last touched at t=0, now past 1 hour TTL)
+            assert cleaned == 2
+
+            # Only active endpoint should remain (last touched at t=1800, only 55 mins ago)
+            endpoints = cb.get_all_endpoints()
+            assert len(endpoints) == 1
+            assert "/api/active" in endpoints
+            assert "/api/stale1" not in endpoints
+            assert "/api/stale2" not in endpoints
+
+    def test_cleanup_no_stale_endpoints(self):
+        """Test cleanup when no endpoints are stale."""
+        cb = CircuitBreaker(
+            failure_threshold=3,
+            timeout_seconds=60,
+            success_threshold=2,
+            endpoint_ttl_hours=24
+        )
+
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
+
+            cb.record_failure("/api/test1")
+            cb.record_failure("/api/test2")
+
+            # Advance time 1 hour (less than 24 hour TTL)
+            mock_time.return_value = 3600.0
+
+            # Cleanup should not remove anything
+            cleaned = cb.cleanup_stale_endpoints()
+            assert cleaned == 0
+
+            # All endpoints should still be tracked
+            endpoints = cb.get_all_endpoints()
+            assert len(endpoints) == 2
+
+    def test_endpoint_access_updates_timestamp(self):
+        """Test that accessing endpoints updates their timestamp."""
+        cb = CircuitBreaker(
+            failure_threshold=3,
+            timeout_seconds=60,
+            success_threshold=2,
+            endpoint_ttl_hours=1
+        )
+
+        with patch('f5xc_exporter.client.time.time') as mock_time:
+            # Start at t=0
+            mock_time.return_value = 0.0
+
+            endpoint = "/api/test"
+            cb.record_failure(endpoint)
+
+            # Advance time 30 minutes
+            mock_time.return_value = 1800.0
+
+            # Access endpoint to update timestamp
+            cb.is_call_allowed(endpoint)
+
+            # Advance time 50 minutes from last access (less than 1 hour TTL)
+            mock_time.return_value = 4800.0  # 1 hour 20 mins from start, 50 mins from last access
+
+            # Endpoint should NOT be cleaned up (last access was only 50 mins ago)
+            cleaned = cb.cleanup_stale_endpoints()
+            assert cleaned == 0
+
+            endpoints = cb.get_all_endpoints()
+            assert endpoint in endpoints
+
+
+class TestCircuitBreakerIntegration:
+    """Test circuit breaker integration with F5XCClient."""
+
+    def test_circuit_breaker_open_raises_exception(self, test_config):
+        """Test that open circuit breaker raises exception."""
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Manually open the circuit
+        client.circuit_breaker.record_failure(endpoint)
+        client.circuit_breaker.record_failure(endpoint)
+        client.circuit_breaker.record_failure(endpoint)
+        client.circuit_breaker.record_failure(endpoint)
+        client.circuit_breaker.record_failure(endpoint)
+
+        # Attempt to make request should raise circuit breaker exception
+        with pytest.raises(F5XCCircuitBreakerOpenError) as exc_info:
+            client.get(endpoint)
+
+        assert "Circuit breaker is open" in str(exc_info.value)
+
+    @responses.activate
+    def test_successful_request_records_success(self, test_config):
+        """Test successful request records success in circuit breaker."""
+        responses.add(
+            responses.GET,
+            "https://test.console.ves.volterra.io/api/test",
+            json={"status": "ok"},
+            status=200
+        )
+
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Make successful request
+        result = client.get(endpoint)
+
+        assert result == {"status": "ok"}
+        # Verify circuit breaker recorded success
+        assert client.circuit_breaker.get_failure_count(endpoint) == 0
+        assert client.circuit_breaker.get_state_value(endpoint) == CircuitBreakerState.CLOSED.value
+
+    def test_failed_request_records_failure(self, test_config):
+        """Test failed request records failure in circuit breaker."""
+        import requests.exceptions
+
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Mock session to raise connection error
+        client.session.request = Mock(side_effect=requests.exceptions.ConnectionError("Connection failed"))
+
+        # Attempt request
+        with pytest.raises(F5XCAPIError):
+            client.get(endpoint)
+
+        # Verify circuit breaker recorded failure
+        assert client.circuit_breaker.get_failure_count(endpoint) == 1
+
+    def test_rate_limit_records_failure(self, test_config):
+        """Test rate limit error records failure in circuit breaker."""
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Mock the session to return a 429 response
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_response.headers = {"Retry-After": "60"}
+        mock_response.json.return_value = {"error": "Too Many Requests"}
+
+        client.session.request = Mock(return_value=mock_response)
+
+        with pytest.raises(F5XCRateLimitError):
+            client.get(endpoint)
+
+        # Verify circuit breaker recorded failure
+        assert client.circuit_breaker.get_failure_count(endpoint) >= 1
+
+    def test_auth_error_does_not_record_failure(self, test_config):
+        """Test authentication error does not record circuit breaker failure."""
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Mock the session to return a 401 response
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.json.return_value = {"error": "Unauthorized"}
+
+        client.session.request = Mock(return_value=mock_response)
+
+        with pytest.raises(F5XCAuthenticationError):
+            client.get(endpoint)
+
+        # Auth errors should NOT record circuit breaker failure
+        assert client.circuit_breaker.get_failure_count(endpoint) == 0
+
+    @responses.activate
+    def test_circuit_breaker_metrics_updated(self, test_config):
+        """Test circuit breaker metrics are updated."""
+        responses.add(
+            responses.GET,
+            "https://test.console.ves.volterra.io/api/test",
+            json={"status": "ok"},
+            status=200
+        )
+
+        client = F5XCClient(test_config)
+        endpoint = "/api/test"
+
+        # Make successful request
+        client.get(endpoint)
+
+        # Verify metrics exist
+        assert client.circuit_breaker_state_metric is not None
+        assert client.circuit_breaker_failures_metric is not None

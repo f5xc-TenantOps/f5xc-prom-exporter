@@ -1,0 +1,49 @@
+groups:
+  - name: f5xc_quota_alerts
+    interval: 60s
+    rules:
+      # Critical Alerts
+      - alert: QuotaUtilizationCritical
+        expr: f5xc_quota_utilization > 80
+        for: 5m
+        labels:
+          severity: critical
+          component: quota
+        annotations:
+          summary: "F5XC quota utilization critical for {{ $labels.resource_name }}"
+          description: |
+            Quota utilization for resource {{ $labels.resource_name }} in namespace {{ $labels.namespace }}
+            is at {{ $value | humanizePercentage }}. Immediate action required to prevent service disruption.
+            Current usage: {{ with query (printf "f5xc_quota_current{tenant='%s',namespace='%s',resource_name='%s'}" .Labels.tenant .Labels.namespace .Labels.resource_name) }}{{ . | first | value }}{{ end }}
+            Quota limit: {{ with query (printf "f5xc_quota_limit{tenant='%s',namespace='%s',resource_name='%s'}" .Labels.tenant .Labels.namespace .Labels.resource_name) }}{{ . | first | value }}{{ end }}
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-QuotaUtilizationCritical
+
+      # Warning Alerts
+      - alert: QuotaUtilizationWarning
+        expr: f5xc_quota_utilization > 60 and f5xc_quota_utilization <= 80
+        for: 15m
+        labels:
+          severity: warning
+          component: quota
+        annotations:
+          summary: "F5XC quota utilization elevated for {{ $labels.resource_name }}"
+          description: |
+            Quota utilization for resource {{ $labels.resource_name }} in namespace {{ $labels.namespace }}
+            is at {{ $value | humanizePercentage }}. Consider reviewing resource usage and planning for expansion.
+            Current usage: {{ with query (printf "f5xc_quota_current{tenant='%s',namespace='%s',resource_name='%s'}" .Labels.tenant .Labels.namespace .Labels.resource_name) }}{{ . | first | value }}{{ end }}
+            Quota limit: {{ with query (printf "f5xc_quota_limit{tenant='%s',namespace='%s',resource_name='%s'}" .Labels.tenant .Labels.namespace .Labels.resource_name) }}{{ . | first | value }}{{ end }}
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-QuotaUtilizationWarning
+
+      # Collection Health
+      - alert: QuotaCollectionFailed
+        expr: f5xc_quota_collection_success == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: collector
+        annotations:
+          summary: "F5XC quota collection failing for namespace {{ $labels.namespace }}"
+          description: |
+            Quota metrics collection has been failing for namespace {{ $labels.namespace }} for over 10 minutes.
+            This may indicate API connectivity issues or credential problems.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-CollectionFailure

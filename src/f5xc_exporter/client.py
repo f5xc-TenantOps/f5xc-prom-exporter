@@ -1,12 +1,15 @@
 """F5 Distributed Cloud API client."""
 
+import threading
 import time
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Any, Optional
 from urllib.parse import urljoin
 
 import requests
 import structlog
+from prometheus_client import Counter, Gauge
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -15,18 +18,266 @@ from .config import Config
 logger = structlog.get_logger()
 
 
+class CircuitBreakerState(Enum):
+    """Circuit breaker states."""
+    CLOSED = 0      # Normal operation
+    OPEN = 1        # Failing, reject all requests
+    HALF_OPEN = 2   # Testing recovery
+
+
+class CircuitBreaker:
+    """Circuit breaker to prevent cascading failures.
+
+    Tracks failures per endpoint and opens circuit when threshold is exceeded.
+    After timeout, allows limited requests to test recovery (HALF_OPEN state).
+
+    Thread-safe: All state modifications are protected by an internal lock.
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        timeout_seconds: int = 60,
+        success_threshold: int = 2,
+        endpoint_ttl_hours: int = 24
+    ):
+        """Initialize circuit breaker.
+
+        Args:
+            failure_threshold: Number of consecutive failures before opening circuit
+            timeout_seconds: Seconds to wait before attempting recovery
+            success_threshold: Number of successes in HALF_OPEN before closing circuit
+            endpoint_ttl_hours: Hours of inactivity before endpoint is cleaned up (default: 24)
+        """
+        self.failure_threshold = failure_threshold
+        self.timeout_seconds = timeout_seconds
+        self.success_threshold = success_threshold
+        self.endpoint_ttl_hours = endpoint_ttl_hours
+
+        # Track state per endpoint
+        self._states: dict[str, CircuitBreakerState] = {}
+        self._failure_counts: dict[str, int] = {}
+        self._success_counts: dict[str, int] = {}
+        self._last_failure_times: dict[str, float] = {}
+        self._last_access_times: dict[str, float] = {}
+
+        # Thread safety lock
+        self._lock = threading.Lock()
+
+    def _get_state(self, endpoint: str) -> CircuitBreakerState:
+        """Get current state for endpoint."""
+        return self._states.get(endpoint, CircuitBreakerState.CLOSED)
+
+    def _set_state(self, endpoint: str, state: CircuitBreakerState) -> None:
+        """Set state for endpoint."""
+        old_state = self._get_state(endpoint)
+        self._states[endpoint] = state
+
+        if old_state != state:
+            logger.info(
+                "Circuit breaker state changed",
+                endpoint=endpoint,
+                old_state=old_state.name,
+                new_state=state.name
+            )
+
+    def _touch_endpoint(self, endpoint: str) -> None:
+        """Update last access time for endpoint."""
+        self._last_access_times[endpoint] = time.time()
+
+    def is_call_allowed(self, endpoint: str) -> bool:
+        """Check if call is allowed for endpoint.
+
+        Thread-safe: Uses internal lock to prevent race conditions during
+        state transitions from OPEN to HALF_OPEN.
+
+        Returns:
+            True if call should proceed, False if circuit is open
+        """
+        with self._lock:
+            self._touch_endpoint(endpoint)
+            state = self._get_state(endpoint)
+
+            if state == CircuitBreakerState.CLOSED:
+                return True
+
+            if state == CircuitBreakerState.OPEN:
+                # Check if timeout has elapsed
+                last_failure = self._last_failure_times.get(endpoint, 0)
+                if time.time() - last_failure >= self.timeout_seconds:
+                    # Transition to HALF_OPEN to test recovery
+                    self._set_state(endpoint, CircuitBreakerState.HALF_OPEN)
+                    self._success_counts[endpoint] = 0
+                    logger.info(
+                        "Circuit breaker entering HALF_OPEN state",
+                        endpoint=endpoint,
+                        timeout_seconds=self.timeout_seconds
+                    )
+                    return True
+                else:
+                    logger.debug(
+                        "Circuit breaker rejecting call",
+                        endpoint=endpoint,
+                        state="OPEN",
+                        seconds_until_retry=int(self.timeout_seconds - (time.time() - last_failure))
+                    )
+                    return False
+
+            if state == CircuitBreakerState.HALF_OPEN:
+                # Allow call in HALF_OPEN state
+                return True
+
+            return True
+
+    def record_success(self, endpoint: str) -> None:
+        """Record successful call for endpoint.
+
+        Thread-safe: Uses internal lock to prevent race conditions.
+        """
+        with self._lock:
+            self._touch_endpoint(endpoint)
+            state = self._get_state(endpoint)
+
+            if state == CircuitBreakerState.HALF_OPEN:
+                # Increment success count in HALF_OPEN state
+                self._success_counts[endpoint] = self._success_counts.get(endpoint, 0) + 1
+
+                if self._success_counts[endpoint] >= self.success_threshold:
+                    # Enough successes, close the circuit
+                    # Log before resetting the count
+                    success_count = self._success_counts[endpoint]
+                    self._set_state(endpoint, CircuitBreakerState.CLOSED)
+                    self._failure_counts[endpoint] = 0
+                    self._success_counts[endpoint] = 0
+                    logger.info(
+                        "Circuit breaker closed after successful recovery",
+                        endpoint=endpoint,
+                        success_count=success_count
+                    )
+            else:
+                # Reset failure count on success in CLOSED state
+                if endpoint in self._failure_counts:
+                    self._failure_counts[endpoint] = 0
+
+    def record_failure(self, endpoint: str) -> None:
+        """Record failed call for endpoint.
+
+        Thread-safe: Uses internal lock to prevent race conditions.
+        """
+        with self._lock:
+            self._touch_endpoint(endpoint)
+            state = self._get_state(endpoint)
+
+            # Increment failure count
+            self._failure_counts[endpoint] = self._failure_counts.get(endpoint, 0) + 1
+            self._last_failure_times[endpoint] = time.time()
+
+            if state == CircuitBreakerState.HALF_OPEN:
+                # Failure in HALF_OPEN state, reopen circuit
+                self._set_state(endpoint, CircuitBreakerState.OPEN)
+                logger.warning(
+                    "Circuit breaker reopened after failure in HALF_OPEN",
+                    endpoint=endpoint
+                )
+            elif state == CircuitBreakerState.CLOSED:
+                # Check if threshold exceeded
+                if self._failure_counts[endpoint] >= self.failure_threshold:
+                    self._set_state(endpoint, CircuitBreakerState.OPEN)
+                    logger.warning(
+                        "Circuit breaker opened due to failures",
+                        endpoint=endpoint,
+                        failure_count=self._failure_counts[endpoint],
+                        threshold=self.failure_threshold
+                    )
+
+    def get_failure_count(self, endpoint: str) -> int:
+        """Get current failure count for endpoint.
+
+        Thread-safe: Uses internal lock to prevent reading inconsistent state.
+        """
+        with self._lock:
+            return self._failure_counts.get(endpoint, 0)
+
+    def get_state_value(self, endpoint: str) -> int:
+        """Get numeric state value for metrics.
+
+        Thread-safe: Uses internal lock to prevent reading inconsistent state.
+        """
+        with self._lock:
+            return self._get_state(endpoint).value
+
+    def get_all_endpoints(self) -> list[str]:
+        """Get all tracked endpoints.
+
+        Thread-safe: Uses internal lock to prevent reading inconsistent state.
+        """
+        with self._lock:
+            # Collect endpoints from all tracking dictionaries
+            all_endpoints: set[str] = set()
+            all_endpoints.update(self._states.keys())
+            all_endpoints.update(self._failure_counts.keys())
+            all_endpoints.update(self._success_counts.keys())
+            all_endpoints.update(self._last_failure_times.keys())
+            all_endpoints.update(self._last_access_times.keys())
+            return list(all_endpoints)
+
+    def cleanup_stale_endpoints(self) -> int:
+        """Remove endpoints that haven't been accessed within TTL period.
+
+        Thread-safe: Uses internal lock to prevent race conditions.
+
+        Returns:
+            Number of endpoints cleaned up
+        """
+        with self._lock:
+            now = time.time()
+            ttl_seconds = self.endpoint_ttl_hours * 3600
+            stale_endpoints = []
+
+            # Find endpoints that haven't been accessed within TTL
+            for endpoint, last_access in self._last_access_times.items():
+                if now - last_access >= ttl_seconds:
+                    stale_endpoints.append(endpoint)
+
+            # Remove stale endpoints from all tracking dictionaries
+            for endpoint in stale_endpoints:
+                self._states.pop(endpoint, None)
+                self._failure_counts.pop(endpoint, None)
+                self._success_counts.pop(endpoint, None)
+                self._last_failure_times.pop(endpoint, None)
+                self._last_access_times.pop(endpoint, None)
+
+            if stale_endpoints:
+                logger.info(
+                    "Cleaned up stale circuit breaker endpoints",
+                    count=len(stale_endpoints),
+                    ttl_hours=self.endpoint_ttl_hours,
+                    endpoints=stale_endpoints
+                )
+
+            return len(stale_endpoints)
+
+
 class F5XCAPIError(Exception):
     """Base exception for F5XC API errors."""
+
     pass
 
 
 class F5XCAuthenticationError(F5XCAPIError):
     """Authentication error."""
+
     pass
 
 
 class F5XCRateLimitError(F5XCAPIError):
     """Rate limit error."""
+
+    pass
+
+
+class F5XCCircuitBreakerOpenError(F5XCAPIError):
+    """Circuit breaker is open, call rejected."""
     pass
 
 
@@ -49,14 +300,48 @@ class F5XCClient:
         self.session.mount("https://", adapter)
 
         # Set headers
-        self.session.headers.update({
-            "Authorization": f"APIToken {config.f5xc_access_token}",
-            "Content-Type": "application/json",
-            "User-Agent": "f5xc-prom-exporter/0.1.0",
-        })
+        self.session.headers.update(
+            {
+                "Authorization": f"APIToken {config.f5xc_access_token}",
+                "Content-Type": "application/json",
+                "User-Agent": "f5xc-prom-exporter/0.1.0",
+            }
+        )
 
         # Store timeout for requests
         self.timeout = config.f5xc_request_timeout
+
+        # Initialize circuit breaker
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=config.f5xc_circuit_breaker_failure_threshold,
+            timeout_seconds=config.f5xc_circuit_breaker_timeout,
+            success_threshold=config.f5xc_circuit_breaker_success_threshold,
+            endpoint_ttl_hours=config.f5xc_circuit_breaker_endpoint_ttl_hours
+        )
+
+        # Circuit breaker metrics
+        self.circuit_breaker_state_metric = Gauge(
+            'f5xc_circuit_breaker_state',
+            'Circuit breaker state (0=closed, 1=open, 2=half_open)',
+            ['endpoint']
+        )
+        self.circuit_breaker_failures_metric = Gauge(
+            'f5xc_circuit_breaker_failures',
+            'Circuit breaker failure count',
+            ['endpoint']
+        )
+        self.circuit_breaker_endpoints_cleaned_metric = Counter(
+            'f5xc_circuit_breaker_endpoints_cleaned_total',
+            'Total number of circuit breaker endpoints cleaned up'
+        )
+
+    def _update_circuit_breaker_metrics(self, endpoint: str) -> None:
+        """Update circuit breaker metrics for an endpoint."""
+        state_value = self.circuit_breaker.get_state_value(endpoint)
+        failure_count = self.circuit_breaker.get_failure_count(endpoint)
+
+        self.circuit_breaker_state_metric.labels(endpoint=endpoint).set(state_value)
+        self.circuit_breaker_failures_metric.labels(endpoint=endpoint).set(failure_count)
 
     def _make_request(
         self,
@@ -64,7 +349,17 @@ class F5XCClient:
         endpoint: str,
         **kwargs: Any
     ) -> dict[str, Any]:
-        """Make HTTP request to F5XC API."""
+        """Make HTTP request to F5XC API with circuit breaker protection."""
+        # Check circuit breaker before making request
+        if not self.circuit_breaker.is_call_allowed(endpoint):
+            logger.warning(
+                "Circuit breaker rejecting request",
+                endpoint=endpoint,
+                state="OPEN"
+            )
+            raise F5XCCircuitBreakerOpenError(
+                f"Circuit breaker is open for endpoint: {endpoint}"
+            )
         url = urljoin(self.config.tenant_url_str, endpoint)
 
         logger.info(
@@ -85,11 +380,15 @@ class F5XCClient:
                     retry_after=retry_after,
                     endpoint=endpoint,
                 )
+                # Record failure for circuit breaker
+                self.circuit_breaker.record_failure(endpoint)
+                self._update_circuit_breaker_metrics(endpoint)
                 raise F5XCRateLimitError(f"Rate limited. Retry after {retry_after} seconds")
 
             # Handle authentication errors
             if response.status_code == 401:
                 logger.error("Authentication failed", endpoint=endpoint)
+                # Don't record auth failures - likely config issue, not API issue
                 raise F5XCAuthenticationError("Invalid F5XC access token")
 
             # Handle other HTTP errors
@@ -105,8 +404,18 @@ class F5XCClient:
                 response_size=len(response.content),
             )
 
+            # Record success for circuit breaker
+            self.circuit_breaker.record_success(endpoint)
+            self._update_circuit_breaker_metrics(endpoint)
+
             return dict(data)
 
+        except F5XCRateLimitError:
+            # Re-raise rate limit errors (already recorded failure and updated metrics)
+            raise
+        except F5XCAuthenticationError:
+            # Re-raise auth errors (not recorded as circuit breaker failure)
+            raise
         except requests.exceptions.RequestException as e:
             logger.error(
                 "F5XC API request failed",
@@ -114,6 +423,9 @@ class F5XCClient:
                 error=str(e),
                 exc_info=True,
             )
+            # Record failure for circuit breaker
+            self.circuit_breaker.record_failure(endpoint)
+            self._update_circuit_breaker_metrics(endpoint)
             raise F5XCAPIError(f"API request failed: {e}") from e
 
     def get(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
@@ -138,10 +450,9 @@ class F5XCClient:
         # - ves-io-* are F5 internal namespaces
         # - system namespace returns aggregated data for all namespaces (causes duplicates)
         return [
-            item.get("name", "") for item in items
-            if item.get("name")
-            and not item.get("name", "").startswith("ves-io-")
-            and item.get("name") != "system"
+            item.get("name", "")
+            for item in items
+            if item.get("name") and not item.get("name", "").startswith("ves-io-") and item.get("name") != "system"
         ]
 
     def get_quota_usage(self, namespace: str = "system") -> dict[str, Any]:
@@ -162,17 +473,13 @@ class F5XCClient:
             "step": "1m",
             "time": {
                 "end": int(time.time()),
-                "start": int(time.time() - 3600)  # Last hour
-            }
+                "start": int(time.time() - 3600),  # Last hour
+            },
         }
 
         return self.post(endpoint, json=payload)
 
-    def get_app_firewall_metrics_for_namespace(
-        self,
-        namespace: str,
-        step_seconds: int = 300
-    ) -> dict[str, Any]:
+    def get_app_firewall_metrics_for_namespace(self, namespace: str, step_seconds: int = 300) -> dict[str, Any]:
         """Get app firewall metrics for a namespace.
 
         Uses the F5XC API endpoint: /api/data/namespaces/{namespace}/app_firewall/metrics
@@ -197,16 +504,13 @@ class F5XCClient:
             "filter": f'NAMESPACE="{namespace}"',
             "start_time": str(start_time),
             "end_time": str(end_time),
-            "step": f"{step_seconds}s"
+            "step": f"{step_seconds}s",
         }
 
         return self.post(endpoint, json=payload)
 
     def get_security_event_counts_for_namespace(
-        self,
-        namespace: str,
-        event_types: list[str],
-        step_seconds: int = 300
+        self, namespace: str, event_types: list[str], step_seconds: int = 300
     ) -> dict[str, Any]:
         """Get security event counts at namespace level.
 
@@ -237,16 +541,9 @@ class F5XCClient:
         payload = {
             "namespace": namespace,
             "query": f'{{sec_event_type=~"{event_filter}"}}',
-            "aggs": {
-                "by_event_type": {
-                    "field_aggregation": {
-                        "field": "SEC_EVENT_TYPE",
-                        "topk": 100
-                    }
-                }
-            },
+            "aggs": {"by_event_type": {"field_aggregation": {"field": "SEC_EVENT_TYPE", "topk": 100}}},
             "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-            "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         }
 
         return self.post(endpoint, json=payload)
@@ -263,10 +560,7 @@ class F5XCClient:
             "namespace": namespace,
             "start_time": int(time.time() - 3600),  # Last hour
             "end_time": int(time.time()),
-            "agg": {
-                "type": "cardinality",
-                "field": "req_id"
-            }
+            "agg": {"type": "cardinality", "field": "req_id"},
         }
 
         return self.post(endpoint, json=payload)
@@ -283,21 +577,12 @@ class F5XCClient:
             "namespace": namespace,
             "start_time": int(time.time() - 3600),  # Last hour
             "end_time": int(time.time()),
-            "aggs": {
-                "response_codes": {
-                    "field": "rsp_code_class",
-                    "topk": 10
-                }
-            }
+            "aggs": {"response_codes": {"field": "rsp_code_class", "topk": 10}},
         }
 
         return self.post(endpoint, json=payload)
 
-    def get_synthetic_summary(
-        self,
-        namespace: str,
-        monitor_type: str
-    ) -> dict[str, Any]:
+    def get_synthetic_summary(self, namespace: str, monitor_type: str) -> dict[str, Any]:
         """Get synthetic monitor summary for a namespace.
 
         Uses F5XC API endpoint:
@@ -353,7 +638,7 @@ class F5XCClient:
                             "RESPONSE_THROUGHPUT",
                             "CLIENT_RTT",
                             "SERVER_RTT",
-                            "REQUEST_TO_ORIGIN_RATE"
+                            "REQUEST_TO_ORIGIN_RATE",
                         ]
                     }
                 }
@@ -361,14 +646,8 @@ class F5XCClient:
             "step": f"{step_seconds}s",
             "start_time": str(start_time),
             "end_time": str(end_time),
-            "label_filter": [
-                {
-                    "label": "LABEL_VHOST_TYPE",
-                    "op": "EQ",
-                    "value": "HTTP_LOAD_BALANCER"
-                }
-            ],
-            "group_by": ["NAMESPACE", "VHOST", "SITE"]
+            "label_filter": [{"label": "LABEL_VHOST_TYPE", "op": "EQ", "value": "HTTP_LOAD_BALANCER"}],
+            "group_by": ["NAMESPACE", "VHOST", "SITE"],
         }
 
         return self.post(endpoint, json=payload)
@@ -403,7 +682,7 @@ class F5XCClient:
                             "REQUEST_THROUGHPUT",
                             "RESPONSE_THROUGHPUT",
                             "CLIENT_RTT",
-                            "SERVER_RTT"
+                            "SERVER_RTT",
                         ]
                     }
                 }
@@ -411,14 +690,8 @@ class F5XCClient:
             "step": f"{step_seconds}s",
             "start_time": str(start_time),
             "end_time": str(end_time),
-            "label_filter": [
-                {
-                    "label": "LABEL_VHOST_TYPE",
-                    "op": "EQ",
-                    "value": "TCP_LOAD_BALANCER"
-                }
-            ],
-            "group_by": ["NAMESPACE", "VHOST", "SITE"]
+            "label_filter": [{"label": "LABEL_VHOST_TYPE", "op": "EQ", "value": "TCP_LOAD_BALANCER"}],
+            "group_by": ["NAMESPACE", "VHOST", "SITE"],
         }
 
         return self.post(endpoint, json=payload)
@@ -443,36 +716,19 @@ class F5XCClient:
         payload = {
             "field_selector": {
                 "node": {
-                    "metric": {
-                        "downstream": [
-                            "REQUEST_THROUGHPUT",
-                            "RESPONSE_THROUGHPUT",
-                            "CLIENT_RTT",
-                            "SERVER_RTT"
-                        ]
-                    }
+                    "metric": {"downstream": ["REQUEST_THROUGHPUT", "RESPONSE_THROUGHPUT", "CLIENT_RTT", "SERVER_RTT"]}
                 }
             },
             "step": f"{step_seconds}s",
             "start_time": str(start_time),
             "end_time": str(end_time),
-            "label_filter": [
-                {
-                    "label": "LABEL_VHOST_TYPE",
-                    "op": "EQ",
-                    "value": "UDP_LOAD_BALANCER"
-                }
-            ],
-            "group_by": ["NAMESPACE", "VHOST", "SITE"]
+            "label_filter": [{"label": "LABEL_VHOST_TYPE", "op": "EQ", "value": "UDP_LOAD_BALANCER"}],
+            "group_by": ["NAMESPACE", "VHOST", "SITE"],
         }
 
         return self.post(endpoint, json=payload)
 
-    def get_all_lb_metrics_for_namespace(
-        self,
-        namespace: str,
-        step_seconds: int = 120
-    ) -> dict[str, Any]:
+    def get_all_lb_metrics_for_namespace(self, namespace: str, step_seconds: int = 120) -> dict[str, Any]:
         """Get ALL load balancer metrics (HTTP, TCP, UDP) for a namespace in one call.
 
         Uses the per-namespace service graph API without LABEL_VHOST_TYPE filter
@@ -518,19 +774,27 @@ class F5XCClient:
             "REQUEST_TO_ORIGIN_RATE",
         ]
 
+        # Health score types to collect for both directions
+        healthscore_types = [
+            "HEALTHSCORE_OVERALL",
+            "HEALTHSCORE_CONNECTIVITY",
+            "HEALTHSCORE_PERFORMANCE",
+            "HEALTHSCORE_SECURITY",
+            "HEALTHSCORE_RELIABILITY",
+        ]
+
         payload = {
             "field_selector": {
                 "node": {
-                    "metric": {
-                        "downstream": all_metrics
-                    }
+                    "metric": {"downstream": all_metrics, "upstream": all_metrics},
+                    "healthscore": {"downstream": healthscore_types, "upstream": healthscore_types},
                 }
             },
             "step": f"{step_seconds}s",
             "start_time": str(start_time),
             "end_time": str(end_time),
             # NO label_filter - get all LB types
-            "group_by": ["VHOST", "SITE", "VIRTUAL_HOST_TYPE"]
+            "group_by": ["VHOST", "SITE", "VIRTUAL_HOST_TYPE"],
         }
 
         return self.post(endpoint, json=payload)
@@ -564,29 +828,17 @@ class F5XCClient:
                         node["id"]["namespace"] = namespace
                     all_nodes.append(node)
 
-                logger.debug(
-                    "Collected LB metrics for namespace",
-                    namespace=namespace,
-                    node_count=len(nodes)
-                )
+                logger.debug("Collected LB metrics for namespace", namespace=namespace, node_count=len(nodes))
 
             except F5XCAPIError as e:
-                logger.warning(
-                    "Failed to get LB metrics for namespace",
-                    namespace=namespace,
-                    error=str(e)
-                )
+                logger.warning("Failed to get LB metrics for namespace", namespace=namespace, error=str(e))
                 continue
 
         logger.info("LB metrics collection complete", total_nodes=len(all_nodes))
 
         return {"data": {"nodes": all_nodes, "edges": []}}
 
-    def get_dns_zone_metrics(
-        self,
-        group_by: Optional[list[str]] = None,
-        step_seconds: int = 300
-    ) -> dict[str, Any]:
+    def get_dns_zone_metrics(self, group_by: Optional[list[str]] = None, step_seconds: int = 300) -> dict[str, Any]:
         """Get DNS zone metrics from system namespace.
 
         Uses F5XC API endpoint: POST /api/data/namespaces/system/dns_zones/metrics
@@ -616,7 +868,7 @@ class F5XCClient:
             "filter": "",
             "start_time": str(start_time),
             "end_time": str(end_time),
-            "step": f"{step_seconds}s"
+            "step": f"{step_seconds}s",
         }
 
         return self.post(endpoint, json=payload)
