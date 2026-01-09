@@ -1,12 +1,15 @@
 """Prometheus metrics HTTP server."""
 
+import json
 import threading
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Optional
 
 import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 
+from . import __version__
 from .client import F5XCClient
 from .collectors import (
     DNSCollector,
@@ -29,6 +32,8 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self._handle_metrics()
         elif self.path == "/health":
             self._handle_health()
+        elif self.path == "/ready":
+            self._handle_ready()
         else:
             self._handle_not_found()
 
@@ -49,15 +54,91 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self._send_error_response(500, "Internal server error")
 
     def _handle_health(self) -> None:
-        """Handle /health endpoint."""
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(b"OK")
+        """Handle /health endpoint.
+
+        Always returns 200 if the server is running.
+        Returns JSON with status, version, and collector information.
+        """
+        try:
+            server = getattr(self.server, 'metrics_server', None)
+            if not server:
+                self._send_error_response(500, "Server not properly initialized")
+                return
+
+            # Get collector status
+            collectors = {
+                "quota": "enabled" if server.config.f5xc_quota_interval > 0 else "disabled",
+                "security": "enabled" if server.config.f5xc_security_interval > 0 else "disabled",
+                "synthetic": "enabled" if server.config.f5xc_synthetic_interval > 0 else "disabled",
+                "dns": "enabled" if server.config.f5xc_dns_interval > 0 else "disabled",
+            }
+
+            # Check load balancer collector (enabled if any LB interval > 0)
+            lb_interval = min(
+                server.config.f5xc_http_lb_interval,
+                server.config.f5xc_tcp_lb_interval,
+                server.config.f5xc_udp_lb_interval
+            )
+            collectors["loadbalancer"] = "enabled" if lb_interval > 0 else "disabled"
+
+            response_data = {
+                "status": "healthy",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "version": __version__,
+                "collectors": collectors,
+            }
+
+            self._send_json_response(200, response_data)
+        except Exception as e:
+            logger.error("Error in health check", error=str(e), exc_info=True)
+            self._send_error_response(500, "Health check failed")
+
+    def _handle_ready(self) -> None:
+        """Handle /ready endpoint.
+
+        Returns 200 if F5XC API is reachable and authenticated.
+        Returns 503 if the API is not accessible.
+        """
+        try:
+            server = getattr(self.server, 'metrics_server', None)
+            if not server:
+                self._send_error_response(500, "Server not properly initialized")
+                return
+
+            # Test F5XC API connectivity by listing namespaces
+            try:
+                namespaces = server.client.list_namespaces()
+                response_data = {
+                    "status": "ready",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "api_accessible": True,
+                    "namespace_count": len(namespaces),
+                }
+                self._send_json_response(200, response_data)
+            except Exception as api_error:
+                logger.warning("Readiness check failed", error=str(api_error))
+                response_data = {
+                    "status": "not_ready",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "api_accessible": False,
+                    "error": str(api_error),
+                }
+                self._send_json_response(503, response_data)
+        except Exception as e:
+            logger.error("Error in readiness check", error=str(e), exc_info=True)
+            self._send_error_response(500, "Readiness check failed")
 
     def _handle_not_found(self) -> None:
         """Handle 404 responses."""
         self._send_error_response(404, "Not found")
+
+    def _send_json_response(self, status_code: int, data: dict[str, Any]) -> None:
+        """Send JSON response."""
+        self.send_response(status_code)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        json_data = json.dumps(data, indent=2)
+        self.wfile.write(json_data.encode('utf-8'))
 
     def _send_error_response(self, status_code: int, message: str) -> None:
         """Send error response."""
@@ -263,6 +344,7 @@ class MetricsServer:
         """Start HTTP server for metrics endpoint."""
         self.httpd = HTTPServer(("", self.config.f5xc_exp_http_port), MetricsHandler)
         self.httpd.registry = self.registry  # type: ignore[attr-defined]
+        self.httpd.metrics_server = self  # type: ignore[attr-defined]
 
         logger.info("Starting HTTP server", port=self.config.f5xc_exp_http_port)
 

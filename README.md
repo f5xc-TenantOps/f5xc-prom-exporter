@@ -111,6 +111,74 @@ scrape_configs:
     scrape_interval: 60s
 ```
 
+## Health and Readiness Endpoints
+
+The exporter provides health check endpoints for monitoring and orchestration:
+
+### `/health` - Liveness Probe
+
+Returns 200 if the exporter is running. Use for Kubernetes liveness probes.
+
+**Example response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-01-08T19:00:00.000000+00:00",
+  "version": "0.1.0",
+  "collectors": {
+    "quota": "enabled",
+    "security": "enabled",
+    "synthetic": "enabled",
+    "dns": "enabled",
+    "loadbalancer": "enabled"
+  }
+}
+```
+
+**Kubernetes liveness probe:**
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+```
+
+### `/ready` - Readiness Probe
+
+Returns 200 if F5XC API is accessible and authenticated, 503 otherwise. Use for Kubernetes readiness probes.
+
+**Example response (ready):**
+```json
+{
+  "status": "ready",
+  "timestamp": "2026-01-08T19:00:00.000000+00:00",
+  "api_accessible": true,
+  "namespace_count": 3
+}
+```
+
+**Example response (not ready):**
+```json
+{
+  "status": "not_ready",
+  "timestamp": "2026-01-08T19:00:00.000000+00:00",
+  "api_accessible": false,
+  "error": "Connection refused"
+}
+```
+
+**Kubernetes readiness probe:**
+```yaml
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+```
+
 ## Development
 
 This project follows an issue-based development workflow with feature branches and pull requests.
