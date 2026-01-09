@@ -1,0 +1,95 @@
+groups:
+  - name: f5xc_synthetic_monitoring_alerts
+    interval: 60s
+    rules:
+      # Critical Alerts
+      - alert: SyntheticMonitorDown
+        expr: |
+          (
+            (f5xc_synthetic_http_monitors_healthy / f5xc_synthetic_http_monitors_total) < 0.95
+            and f5xc_synthetic_http_monitors_total > 0
+          ) or (
+            (f5xc_synthetic_dns_monitors_healthy / f5xc_synthetic_dns_monitors_total) < 0.95
+            and f5xc_synthetic_dns_monitors_total > 0
+          )
+        for: 5m
+        labels:
+          severity: critical
+          component: synthetic_monitoring
+        annotations:
+          summary: "Synthetic monitor availability below 95% in namespace {{ $labels.namespace }}"
+          description: |
+            Synthetic monitor availability has fallen below 95% in namespace {{ $labels.namespace }}.
+            HTTP monitors: {{ with query (printf "f5xc_synthetic_http_monitors_healthy{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}/{{ with query (printf "f5xc_synthetic_http_monitors_total{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }} healthy
+            DNS monitors: {{ with query (printf "f5xc_synthetic_dns_monitors_healthy{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}/{{ with query (printf "f5xc_synthetic_dns_monitors_total{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }} healthy
+            Critical monitors: HTTP={{ with query (printf "f5xc_synthetic_http_monitors_critical{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}, DNS={{ with query (printf "f5xc_synthetic_dns_monitors_critical{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-SyntheticMonitorDown
+
+      - alert: SyntheticHTTPMonitorsCritical
+        expr: f5xc_synthetic_http_monitors_critical > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: synthetic_monitoring
+        annotations:
+          summary: "{{ $value }} HTTP synthetic monitor(s) in critical state in namespace {{ $labels.namespace }}"
+          description: |
+            {{ $value }} HTTP synthetic monitor(s) are in a critical state in namespace {{ $labels.namespace }}.
+            Total HTTP monitors: {{ with query (printf "f5xc_synthetic_http_monitors_total{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}
+            Healthy monitors: {{ with query (printf "f5xc_synthetic_http_monitors_healthy{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}
+            Immediate investigation required for affected endpoints.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-SyntheticMonitorCritical
+
+      - alert: SyntheticDNSMonitorsCritical
+        expr: f5xc_synthetic_dns_monitors_critical > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: synthetic_monitoring
+        annotations:
+          summary: "{{ $value }} DNS synthetic monitor(s) in critical state in namespace {{ $labels.namespace }}"
+          description: |
+            {{ $value }} DNS synthetic monitor(s) are in a critical state in namespace {{ $labels.namespace }}.
+            Total DNS monitors: {{ with query (printf "f5xc_synthetic_dns_monitors_total{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}
+            Healthy monitors: {{ with query (printf "f5xc_synthetic_dns_monitors_healthy{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}
+            DNS resolution failures detected - investigate immediately.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-SyntheticMonitorCritical
+
+      # Warning Alerts
+      - alert: SyntheticMonitorDegraded
+        expr: |
+          (
+            (f5xc_synthetic_http_monitors_healthy / f5xc_synthetic_http_monitors_total) < 1
+            and (f5xc_synthetic_http_monitors_healthy / f5xc_synthetic_http_monitors_total) >= 0.95
+            and f5xc_synthetic_http_monitors_total > 0
+          ) or (
+            (f5xc_synthetic_dns_monitors_healthy / f5xc_synthetic_dns_monitors_total) < 1
+            and (f5xc_synthetic_dns_monitors_healthy / f5xc_synthetic_dns_monitors_total) >= 0.95
+            and f5xc_synthetic_dns_monitors_total > 0
+          )
+        for: 15m
+        labels:
+          severity: warning
+          component: synthetic_monitoring
+        annotations:
+          summary: "Some synthetic monitors unhealthy in namespace {{ $labels.namespace }}"
+          description: |
+            Some synthetic monitors are unhealthy but availability is still above 95% in namespace {{ $labels.namespace }}.
+            HTTP monitors: {{ with query (printf "f5xc_synthetic_http_monitors_healthy{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}/{{ with query (printf "f5xc_synthetic_http_monitors_total{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }} healthy
+            DNS monitors: {{ with query (printf "f5xc_synthetic_dns_monitors_healthy{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}/{{ with query (printf "f5xc_synthetic_dns_monitors_total{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }} healthy
+            Monitor for degradation trends.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-SyntheticMonitorDegraded
+
+      # Collection Health
+      - alert: SyntheticCollectionFailed
+        expr: f5xc_synthetic_collection_success == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: collector
+        annotations:
+          summary: "F5XC synthetic monitoring metrics collection failing"
+          description: |
+            Synthetic monitoring metrics collection has been failing for over 10 minutes.
+            This may indicate API connectivity issues or permission problems.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-CollectionFailure

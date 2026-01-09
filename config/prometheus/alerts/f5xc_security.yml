@@ -1,0 +1,91 @@
+groups:
+  - name: f5xc_security_alerts
+    interval: 60s
+    rules:
+      # Critical Alerts
+      - alert: SecurityEventSpike
+        expr: |
+          (
+            rate(f5xc_security_waf_events[5m]) > 3 * avg_over_time(f5xc_security_waf_events[1h] offset 1h)
+            or
+            rate(f5xc_security_bot_defense_events[5m]) > 3 * avg_over_time(f5xc_security_bot_defense_events[1h] offset 1h)
+            or
+            rate(f5xc_security_dos_events[5m]) > 3 * avg_over_time(f5xc_security_dos_events[1h] offset 1h)
+          ) and (
+            rate(f5xc_security_waf_events[5m]) > 0
+            or
+            rate(f5xc_security_bot_defense_events[5m]) > 0
+            or
+            rate(f5xc_security_dos_events[5m]) > 0
+          )
+        for: 5m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Security event spike detected in namespace {{ $labels.namespace }}"
+          description: |
+            Security events have spiked to over 3x the baseline rate in namespace {{ $labels.namespace }}.
+            This may indicate an active attack or security incident requiring immediate investigation.
+            WAF events: {{ with query (printf "f5xc_security_waf_events{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}
+            Bot defense events: {{ with query (printf "f5xc_security_bot_defense_events{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}
+            DoS events: {{ with query (printf "f5xc_security_dos_events{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-SecurityEventSpike
+
+      - alert: HighAttackRate
+        expr: |
+          (f5xc_security_attacked_requests / f5xc_security_total_requests) > 0.05
+          and f5xc_security_total_requests > 100
+        for: 10m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "High attack rate detected on {{ $labels.load_balancer }}"
+          description: |
+            Attack rate on load balancer {{ $labels.load_balancer }} in namespace {{ $labels.namespace }}
+            is {{ $value | humanizePercentage }} (over 5% threshold).
+            Attacked requests: {{ with query (printf "f5xc_security_attacked_requests{tenant='%s',namespace='%s',load_balancer='%s'}" .Labels.tenant .Labels.namespace .Labels.load_balancer) }}{{ . | first | value }}{{ end }}
+            Total requests: {{ with query (printf "f5xc_security_total_requests{tenant='%s',namespace='%s',load_balancer='%s'}" .Labels.tenant .Labels.namespace .Labels.load_balancer) }}{{ . | first | value }}{{ end }}
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-HighAttackRate
+
+      # Warning Alerts
+      - alert: ElevatedBotDetections
+        expr: rate(f5xc_security_bot_detections[5m]) > 10
+        for: 15m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Elevated bot detection rate on {{ $labels.load_balancer }}"
+          description: |
+            Bot detections on load balancer {{ $labels.load_balancer }} in namespace {{ $labels.namespace }}
+            are elevated at {{ $value | humanize }} detections per second over the last 5 minutes.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-ElevatedBotDetections
+
+      - alert: MaliciousUserActivity
+        expr: rate(f5xc_security_malicious_user_events[5m]) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Malicious user activity detected in namespace {{ $labels.namespace }}"
+          description: |
+            Malicious user events detected in namespace {{ $labels.namespace }} at {{ $value | humanize }} events per second.
+            Total events: {{ with query (printf "f5xc_security_malicious_user_events{tenant='%s',namespace='%s'}" .Labels.tenant .Labels.namespace) }}{{ . | first | value }}{{ end }}
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-MaliciousUserActivity
+
+      # Collection Health
+      - alert: SecurityCollectionFailed
+        expr: f5xc_security_collection_success == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: collector
+        annotations:
+          summary: "F5XC security metrics collection failing"
+          description: |
+            Security metrics collection has been failing for over 10 minutes.
+            This may indicate API connectivity issues or permission problems.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-CollectionFailure

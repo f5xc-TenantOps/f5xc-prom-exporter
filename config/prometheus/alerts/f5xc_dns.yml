@@ -1,0 +1,76 @@
+groups:
+  - name: f5xc_dns_alerts
+    interval: 60s
+    rules:
+      # Critical Alerts
+      - alert: DNSLoadBalancerDown
+        expr: f5xc_dns_lb_health_status == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: dns
+        annotations:
+          summary: "DNS load balancer {{ $labels.dns_lb }} is unhealthy"
+          description: |
+            DNS load balancer {{ $labels.dns_lb }} has been unhealthy for over 5 minutes.
+            This may cause DNS resolution failures for dependent services.
+            Check pool member health for root cause.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-DNSLoadBalancerDown
+
+      - alert: DNSPoolMemberDown
+        expr: f5xc_dns_lb_pool_member_health == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: dns
+        annotations:
+          summary: "DNS pool member {{ $labels.member }} is unhealthy"
+          description: |
+            Pool member {{ $labels.member }} in pool {{ $labels.pool }} for DNS load balancer {{ $labels.dns_lb }}
+            has been unhealthy for over 5 minutes. This may reduce DNS redundancy or cause failures.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-DNSPoolMemberDown
+
+      # Warning Alerts
+      - alert: DNSQuerySpike
+        expr: |
+          rate(f5xc_dns_zone_query_count[5m]) > 3 * avg_over_time(f5xc_dns_zone_query_count[1h] offset 1h)
+          and rate(f5xc_dns_zone_query_count[5m]) > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: dns
+        annotations:
+          summary: "DNS query spike detected for zone {{ $labels.zone }}"
+          description: |
+            DNS queries for zone {{ $labels.zone }} have spiked to over 3x the baseline rate.
+            Current rate: {{ $value | humanize }} queries/second
+            Total queries: {{ with query (printf "f5xc_dns_zone_query_count{tenant='%s',zone='%s'}" .Labels.tenant .Labels.zone) }}{{ . | first | value | humanize }}{{ end }}
+            This may indicate a DNS flood attack or legitimate traffic surge.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-DNSQuerySpike
+
+      # Collection Health
+      - alert: DNSCollectionFailed
+        expr: f5xc_dns_collection_success == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: collector
+        annotations:
+          summary: "F5XC DNS metrics collection failing"
+          description: |
+            DNS metrics collection has been failing for over 10 minutes.
+            This may indicate API connectivity issues or permission problems.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-CollectionFailure
+
+      - alert: DNSZoneCountChanged
+        expr: abs(delta(f5xc_dns_zone_count[15m])) > 0
+        for: 5m
+        labels:
+          severity: info
+          component: dns
+        annotations:
+          summary: "DNS zone count changed"
+          description: |
+            Number of DNS zones has changed. Current count: {{ $value | humanize }}
+            This may indicate zone additions or deletions requiring review.
+          runbook_url: https://github.com/f5xc-TenantOps/f5xc-prom-exporter/wiki/Runbook-DNSConfigurationChange
