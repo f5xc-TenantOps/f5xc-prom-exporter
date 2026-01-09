@@ -1,0 +1,39 @@
+{
+  "data": [
+    {
+      "labels": {
+        "DNS_ZONE_NAME": "example.com"
+      },
+      "value": [
+        {
+          "timestamp": 1765850829,
+          "value": "21833"
+        }
+      ]
+    },
+    {
+      "labels": {
+        "DNS_ZONE_NAME": "mysite.net"
+      },
+      "value": [
+        {
+          "timestamp": 1765850829,
+          "value": "15093"
+        }
+      ]
+    },
+    {
+      "labels": {
+        "DNS_ZONE_NAME": "test.org"
+      },
+      "value": [
+        {
+          "timestamp": 1765850829,
+          "value": "1049"
+        }
+      ]
+    }
+  ],
+  "step": "1440m",
+  "total_hits": "3"
+}

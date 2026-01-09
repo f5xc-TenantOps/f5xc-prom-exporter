@@ -1,0 +1,39 @@
+{
+  "total_hits": "52",
+  "aggs": {
+    "by_event_type": {
+      "field_aggregation": {
+        "buckets": [
+          {
+            "key": "waf_sec_event",
+            "count": "20"
+          },
+          {
+            "key": "bot_defense_sec_event",
+            "count": "15"
+          },
+          {
+            "key": "api_sec_event",
+            "count": "5"
+          },
+          {
+            "key": "svc_policy_sec_event",
+            "count": "2"
+          },
+          {
+            "key": "malicious_user_sec_event",
+            "count": "3"
+          },
+          {
+            "key": "ddos_sec_event",
+            "count": "4"
+          },
+          {
+            "key": "dos_sec_event",
+            "count": "3"
+          }
+        ]
+      }
+    }
+  }
+}
