@@ -1,6 +1,5 @@
 """Integration tests for LoadBalancerCollector."""
 
-import pytest
 import responses
 
 from f5xc_exporter.collectors.loadbalancer import LoadBalancerCollector

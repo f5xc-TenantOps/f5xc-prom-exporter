@@ -1,6 +1,5 @@
 """Integration tests for DNSCollector."""
 
-import pytest
 import responses
 
 from f5xc_exporter.collectors.dns import DNSCollector

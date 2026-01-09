@@ -131,7 +131,7 @@ def load_fixture():
         if not fixture_path.exists():
             raise FileNotFoundError(f"Fixture file not found: {fixture_path}")
 
-        with open(fixture_path, "r") as f:
+        with open(fixture_path) as f:
             return json.load(f)
 
     return _load_fixture

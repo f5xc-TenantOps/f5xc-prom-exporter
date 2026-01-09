@@ -1,6 +1,5 @@
 """Integration tests for SyntheticMonitoringCollector."""
 
-import pytest
 import responses
 
 from f5xc_exporter.collectors.synthetic_monitoring import SyntheticMonitoringCollector

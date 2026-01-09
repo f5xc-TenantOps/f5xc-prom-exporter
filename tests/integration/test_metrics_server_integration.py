@@ -1,10 +1,8 @@
 """Integration tests for MetricsServer orchestration."""
 
-import json
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 import responses
 
 from f5xc_exporter.config import Config
