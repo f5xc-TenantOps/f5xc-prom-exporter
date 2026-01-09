@@ -518,20 +518,25 @@ class F5XCClient:
             "REQUEST_TO_ORIGIN_RATE",
         ]
 
+        # Health score types to collect for both directions
+        healthscore_types = [
+            "HEALTHSCORE_OVERALL",
+            "HEALTHSCORE_CONNECTIVITY",
+            "HEALTHSCORE_PERFORMANCE",
+            "HEALTHSCORE_SECURITY",
+            "HEALTHSCORE_RELIABILITY"
+        ]
+
         payload = {
             "field_selector": {
                 "node": {
                     "metric": {
-                        "downstream": all_metrics
+                        "downstream": all_metrics,
+                        "upstream": all_metrics
                     },
                     "healthscore": {
-                        "downstream": [
-                            "HEALTHSCORE_OVERALL",
-                            "HEALTHSCORE_CONNECTIVITY",
-                            "HEALTHSCORE_PERFORMANCE",
-                            "HEALTHSCORE_SECURITY",
-                            "HEALTHSCORE_RELIABILITY"
-                        ]
+                        "downstream": healthscore_types,
+                        "upstream": healthscore_types
                     }
                 }
             },
