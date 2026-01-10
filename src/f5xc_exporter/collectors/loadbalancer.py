@@ -218,7 +218,8 @@ class LoadBalancerCollector:
         Returns:
             Dict with counts of each LB type processed
         """
-        graph_data = data.get("data", {})
+        # Handle null values from API responses
+        graph_data = data.get("data") or {}
         nodes = graph_data.get("nodes", [])
 
         logger.debug("Processing LB nodes", node_count=len(nodes))
@@ -238,7 +239,8 @@ class LoadBalancerCollector:
         Returns:
             The virtual_host_type if processed, None if skipped
         """
-        node_id = node.get("id", {})
+        # Handle null values from API responses
+        node_id = node.get("id") or {}
         virtual_host_type: str = node_id.get("virtual_host_type", "")
 
         # Skip nodes without a recognized LB type
@@ -264,8 +266,9 @@ class LoadBalancerCollector:
                 return None
 
         # Extract metrics from node data
-        node_data = node.get("data", {})
-        metric_data = node_data.get("metric", {})
+        # Handle null values from API responses - use "or {}" to convert None to empty dict
+        node_data = node.get("data") or {}
+        metric_data = node_data.get("metric") or {}
 
         # Process downstream metrics (client -> LB)
         downstream_metrics = metric_data.get("downstream", [])
@@ -277,8 +280,8 @@ class LoadBalancerCollector:
         for metric in upstream_metrics:
             self._process_metric(metric, namespace, vhost, site, virtual_host_type, "upstream")
 
-        # Process healthscore data
-        healthscore_data = node_data.get("healthscore", {})
+        # Process healthscore data - handle null values from API
+        healthscore_data = node_data.get("healthscore") or {}
 
         # Process downstream healthscores (client -> LB)
         downstream_healthscores = healthscore_data.get("downstream", [])
@@ -316,7 +319,8 @@ class LoadBalancerCollector:
             data_type_name: Name for logging (e.g., "metric", "healthscore")
         """
         data_type = data.get("type", "")
-        value_data = data.get("value", {})
+        # Handle null values from API responses
+        value_data = data.get("value") or {}
 
         raw_values = value_data.get("raw", [])
         if not raw_values:

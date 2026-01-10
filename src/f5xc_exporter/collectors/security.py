@@ -187,7 +187,8 @@ class SecurityCollector:
                 continue
 
             for item in metric_group.get("data", []):
-                key = item.get("key", {})
+                # Handle null values from API responses
+                key = item.get("key") or {}
                 load_balancer = key.get("VIRTUAL_HOST", "unknown")
 
                 # Get latest value from the value array
@@ -228,9 +229,10 @@ class SecurityCollector:
             }
         }
         """
-        aggs = data.get("aggs", {})
-        event_type_agg = aggs.get("by_event_type", {})
-        field_agg = event_type_agg.get("field_aggregation", {})
+        # Handle null values from API responses
+        aggs = data.get("aggs") or {}
+        event_type_agg = aggs.get("by_event_type") or {}
+        field_agg = event_type_agg.get("field_aggregation") or {}
         buckets = field_agg.get("buckets", [])
 
         # Track DoS events separately to sum ddos + dos

@@ -172,7 +172,8 @@ class DNSCollector:
         zone_count = 0
 
         for item in zone_data:
-            labels = item.get("labels", {})
+            # Handle null values from API responses
+            labels = item.get("labels") or {}
             zone_name = labels.get("DNS_ZONE_NAME", "unknown")
 
             if zone_name == "unknown":
