@@ -45,7 +45,8 @@ class TestMetricsServerIntegration:
             # Default successful responses for all collectors
             mock_client.list_namespaces.return_value = ["test-ns"]
             mock_client.get_quota_usage.return_value = {"quota_usage": {}}
-            mock_client.get_all_lb_metrics_for_namespace.return_value = {"http": [], "tcp": [], "udp": []}
+            # Fixed: get_all_lb_metrics returns {"data": {"nodes": []}} not {"http": [], "tcp": [], "udp": []}
+            mock_client.get_all_lb_metrics.return_value = {"data": {"nodes": []}}
             mock_client.get_app_firewall_metrics_for_namespace.return_value = {"data": []}
             mock_client.get_security_event_counts_for_namespace.return_value = {"aggs": {}}
             mock_client.get_synthetic_summary.return_value = {
@@ -56,6 +57,11 @@ class TestMetricsServerIntegration:
             mock_client.get_dns_zone_metrics.return_value = {"items": []}
             mock_client.get_dns_lb_health_status.return_value = {"items": []}
             mock_client.get_dns_lb_pool_member_health.return_value = {"items": []}
+
+            # Circuit breaker - mock the circuit_breaker object and its cleanup method
+            mock_circuit_breaker = Mock()
+            mock_circuit_breaker.cleanup_stale_endpoints.return_value = 0  # Returns int, not Mock
+            mock_client.circuit_breaker = mock_circuit_breaker
 
             # Circuit breaker metrics
             mock_client.circuit_breaker_state_metric = Gauge(
