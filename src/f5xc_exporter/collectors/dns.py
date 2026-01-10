@@ -168,11 +168,10 @@ class DNSCollector:
         Returns:
             Number of zones processed
         """
-        zone_data = data.get("data", [])
+        zone_data = data.get("data") or []
         zone_count = 0
 
         for item in zone_data:
-            # Handle null values from API responses
             labels = item.get("labels") or {}
             zone_name = labels.get("DNS_ZONE_NAME", "unknown")
 
@@ -185,7 +184,7 @@ class DNSCollector:
                     continue
 
             # Get the latest value
-            values = item.get("value", [])
+            values = item.get("value") or []
             if not values:
                 continue
 
@@ -219,7 +218,7 @@ class DNSCollector:
         Returns:
             Number of DNS LBs processed
         """
-        items = data.get("items", [])
+        items = data.get("items") or []
         lb_count = 0
 
         for item in items:
@@ -254,7 +253,7 @@ class DNSCollector:
             ]
         }
         """
-        items = data.get("items", [])
+        items = data.get("items") or []
 
         for item in items:
             dns_lb = item.get("dns_lb_name", "unknown")
