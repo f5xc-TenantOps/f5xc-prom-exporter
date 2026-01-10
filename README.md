@@ -1,6 +1,6 @@
 # F5 Distributed Cloud Prometheus Exporter
 
-A Prometheus exporter for collecting metrics from F5 Distributed Cloud (F5xc) tenants. This exporter provides observability into your F5xc infrastructure by exposing key metrics that can be scraped by Prometheus.
+A community supported Prometheus exporter for collecting metrics from F5 Distributed Cloud (F5xc) tenants. This exporter provides observability into your F5xc infrastructure by exposing key metrics that can be scraped by Prometheus.
 
 ## Features
 
