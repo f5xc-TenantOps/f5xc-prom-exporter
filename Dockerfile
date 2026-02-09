@@ -13,8 +13,10 @@ RUN apt-get update && apt-get install -y \
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
-# Install dependencies to a local directory
-RUN pip install --user .
+# Install into a virtualenv so we can copy it cleanly
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir .
 
 # Production stage
 FROM python:3.9-slim
@@ -25,15 +27,15 @@ RUN groupadd -r f5xc && useradd -r -g f5xc f5xc
 # Set working directory
 WORKDIR /app
 
-# Copy installed packages from builder
-COPY --from=builder /root/.local /home/f5xc/.local
+# Copy virtualenv from builder
+COPY --from=builder /opt/venv /opt/venv
 
 # Copy source code
 COPY src/ ./src/
 
 # Set environment variables
-ENV PATH=/home/f5xc/.local/bin:$PATH
-ENV PYTHONPATH=/home/f5xc/.local/lib/python3.9/site-packages:/app/src
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 
 # Set default configuration
@@ -47,7 +49,7 @@ ENV F5XC_SECURITY_INTERVAL=180
 ENV F5XC_SYNTHETIC_INTERVAL=120
 
 # Change ownership and switch to non-root user
-RUN chown -R f5xc:f5xc /app /home/f5xc
+RUN chown -R f5xc:f5xc /app
 USER f5xc
 
 # Expose port
