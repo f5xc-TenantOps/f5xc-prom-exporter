@@ -74,6 +74,69 @@ class TestLoadBalancerCollectorIntegration:
         assert duration >= 0
 
     @responses.activate
+    def test_handles_explicit_null_values_from_api(self, real_client, test_config):
+        """Test that explicit null values in API response don't cause crashes.
+
+        The F5XC API sometimes returns null instead of empty objects/arrays.
+        This test verifies the 'or {}' and 'or []' defensive patterns work.
+
+        Regression test for: AttributeError: 'NoneType' object has no attribute 'get'
+        at loadbalancer.py:284 in _process_node()
+        """
+        # Mock namespace list
+        responses.add(
+            method="GET",
+            url=f"{test_config.tenant_url_str}/api/web/namespaces",
+            json={"items": [{"name": "prod"}]},
+            status=200,
+        )
+
+        # Mock service graph endpoint with explicit null values
+        responses.add(
+            method="POST",
+            url=f"{test_config.tenant_url_str}/api/data/namespaces/prod/graph/service",
+            json={
+                "data": {
+                    "nodes": [
+                        {
+                            "id": {
+                                "namespace": "prod",
+                                "vhost": "test-lb",
+                                "site": "ce-site-1",
+                                "virtual_host_type": "HTTP_LOAD_BALANCER",
+                            },
+                            "data": {
+                                "metric": {
+                                    "downstream": None,  # Explicit null instead of []
+                                    "upstream": None,
+                                },
+                                "healthscore": None,  # Explicit null instead of {}
+                            },
+                        },
+                        {
+                            "id": {
+                                "namespace": "prod",
+                                "vhost": "test-lb-2",
+                                "site": "ce-site-1",
+                                "virtual_host_type": "HTTP_LOAD_BALANCER",
+                            },
+                            "data": None,  # Entire data block is null
+                        },
+                    ]
+                }
+            },
+            status=200,
+        )
+
+        collector = LoadBalancerCollector(real_client, "test-tenant")
+        collector.collect_metrics()  # Must not raise AttributeError
+
+        # Collection should succeed despite null values
+        assert get_metric_value(collector.collection_success, tenant="test-tenant") == 1
+        # Both LBs should be counted even though they have null data
+        assert get_metric_value(collector.http_lb_count, tenant="test-tenant") == 2
+
+    @responses.activate
     def test_http_lb_metrics(self, real_client, load_fixture, test_config):
         """Test that HTTP LB metrics are correctly processed."""
         # Mock namespace list

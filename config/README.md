@@ -67,9 +67,12 @@ helm install f5xc-exporter config/helm/f5xc-prom-exporter/ \
 
 ### Collection Intervals (seconds)
 - **F5XC_QUOTA_INTERVAL**: 600 (10 minutes) - Resource quota metrics
-- **F5XC_HTTP_LB_INTERVAL**: 120 (2 minutes) - HTTP load balancer metrics
-- **F5XC_SECURITY_INTERVAL**: 180 (3 minutes) - Security event metrics
+- **F5XC_SECURITY_INTERVAL**: 120 (2 minutes) - Security event metrics
 - **F5XC_SYNTHETIC_INTERVAL**: 120 (2 minutes) - Synthetic monitoring
+- **F5XC_HTTP_LB_INTERVAL**: 120 (2 minutes) - HTTP load balancer metrics
+- **F5XC_TCP_LB_INTERVAL**: 120 (2 minutes) - TCP load balancer metrics
+- **F5XC_UDP_LB_INTERVAL**: 120 (2 minutes) - UDP load balancer metrics
+- **F5XC_DNS_INTERVAL**: 120 (2 minutes) - DNS zone and LB metrics
 
 ### Server Settings
 - **F5XC_EXP_HTTP_PORT**: 8080 - Metrics server port
@@ -101,13 +104,24 @@ The exporter is automatically discovered by Prometheus using:
 - ServiceMonitor (for Prometheus Operator)
 
 ### Grafana
-Import dashboards for F5XC metrics visualization (dashboards coming soon).
+5 production-ready dashboards available in `grafana/`:
+- Overview - Collector health, quota utilization, resource counts
+- Load Balancer - Request rates, latency, health scores
+- Security - WAF events, bot defense, attack rates
+- DNS - Zone queries, load balancer health
+- Synthetic - Monitor availability and health
 
-### Alerting
-Configure alerts based on:
-- Quota utilization thresholds
-- Load balancer health
-- Security event volumes
+See [grafana/README.md](grafana/README.md) for installation instructions.
+
+### Prometheus Alerts
+Comprehensive alerting rules available in `prometheus/alerts/`:
+- Quota utilization thresholds (critical >80%, warning >60%)
+- Security events and attack detection
+- Load balancer performance and health
+- DNS zone query anomalies
+- Synthetic monitoring failures
+
+See [prometheus/alerts/README.md](prometheus/alerts/README.md) for installation and configuration.
 
 ## Troubleshooting
 

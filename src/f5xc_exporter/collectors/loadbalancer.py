@@ -2,6 +2,9 @@
 
 Collects HTTP, TCP, and UDP load balancer metrics in a single API call
 per namespace, filtering by virtual_host_type.
+
+Note: F5XC API may return null for nested objects/arrays. We use "or {}" and "or []"
+pattern throughout to defensively handle both missing keys and explicit null values.
 """
 
 import time
@@ -218,8 +221,8 @@ class LoadBalancerCollector:
         Returns:
             Dict with counts of each LB type processed
         """
-        graph_data = data.get("data", {})
-        nodes = graph_data.get("nodes", [])
+        graph_data = data.get("data") or {}
+        nodes = graph_data.get("nodes") or []
 
         logger.debug("Processing LB nodes", node_count=len(nodes))
 
@@ -238,7 +241,7 @@ class LoadBalancerCollector:
         Returns:
             The virtual_host_type if processed, None if skipped
         """
-        node_id = node.get("id", {})
+        node_id = node.get("id") or {}
         virtual_host_type: str = node_id.get("virtual_host_type", "")
 
         # Skip nodes without a recognized LB type
@@ -264,29 +267,29 @@ class LoadBalancerCollector:
                 return None
 
         # Extract metrics from node data
-        node_data = node.get("data", {})
-        metric_data = node_data.get("metric", {})
+        node_data = node.get("data") or {}
+        metric_data = node_data.get("metric") or {}
 
         # Process downstream metrics (client -> LB)
-        downstream_metrics = metric_data.get("downstream", [])
+        downstream_metrics = metric_data.get("downstream") or []
         for metric in downstream_metrics:
             self._process_metric(metric, namespace, vhost, site, virtual_host_type, "downstream")
 
         # Process upstream metrics (LB -> origin)
-        upstream_metrics = metric_data.get("upstream", [])
+        upstream_metrics = metric_data.get("upstream") or []
         for metric in upstream_metrics:
             self._process_metric(metric, namespace, vhost, site, virtual_host_type, "upstream")
 
         # Process healthscore data
-        healthscore_data = node_data.get("healthscore", {})
+        healthscore_data = node_data.get("healthscore") or {}
 
         # Process downstream healthscores (client -> LB)
-        downstream_healthscores = healthscore_data.get("downstream", [])
+        downstream_healthscores = healthscore_data.get("downstream") or []
         for healthscore in downstream_healthscores:
             self._process_healthscore(healthscore, namespace, vhost, site, virtual_host_type, "downstream")
 
         # Process upstream healthscores (LB -> origin)
-        upstream_healthscores = healthscore_data.get("upstream", [])
+        upstream_healthscores = healthscore_data.get("upstream") or []
         for healthscore in upstream_healthscores:
             self._process_healthscore(healthscore, namespace, vhost, site, virtual_host_type, "upstream")
 
@@ -316,9 +319,9 @@ class LoadBalancerCollector:
             data_type_name: Name for logging (e.g., "metric", "healthscore")
         """
         data_type = data.get("type", "")
-        value_data = data.get("value", {})
+        value_data = data.get("value") or {}
 
-        raw_values = value_data.get("raw", [])
+        raw_values = value_data.get("raw") or []
         if not raw_values:
             return
 

@@ -179,19 +179,19 @@ class SecurityCollector:
             "step": "5m"
         }
         """
-        for metric_group in data.get("data", []):
+        for metric_group in data.get("data") or []:
             metric_type = metric_group.get("type", "")
             gauge = self._get_gauge_for_app_firewall_type(metric_type)
 
             if not gauge:
                 continue
 
-            for item in metric_group.get("data", []):
-                key = item.get("key", {})
+            for item in metric_group.get("data") or []:
+                key = item.get("key") or {}
                 load_balancer = key.get("VIRTUAL_HOST", "unknown")
 
                 # Get latest value from the value array
-                values = item.get("value", [])
+                values = item.get("value") or []
                 if not values:
                     continue
 
@@ -228,10 +228,10 @@ class SecurityCollector:
             }
         }
         """
-        aggs = data.get("aggs", {})
-        event_type_agg = aggs.get("by_event_type", {})
-        field_agg = event_type_agg.get("field_aggregation", {})
-        buckets = field_agg.get("buckets", [])
+        aggs = data.get("aggs") or {}
+        event_type_agg = aggs.get("by_event_type") or {}
+        field_agg = event_type_agg.get("field_aggregation") or {}
+        buckets = field_agg.get("buckets") or []
 
         # Track DoS events separately to sum ddos + dos
         dos_total: float = 0.0
